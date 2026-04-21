@@ -6,47 +6,70 @@ const db = require('../db/database');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-function requireUser(req, res, next) {
-  const syncCode = req.headers['x-sync-code'];
-  if (!syncCode) return res.status(401).json({ error: 'Sync code required.' });
-  const user = db.getUserBySyncCode(syncCode);
-  if (!user) return res.status(401).json({ error: 'Invalid sync code.' });
-  req.user = user;
-  next();
+async function requireUser(req, res, next) {
+  try {
+    const syncCode = req.headers['x-sync-code'];
+    if (!syncCode) return res.status(401).json({ error: 'Sync code required.' });
+    const user = await db.getUserBySyncCode(syncCode);
+    if (!user) return res.status(401).json({ error: 'Invalid sync code.' });
+    req.user = user;
+    next();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 }
 
 router.use(requireUser);
 
-router.get('/', (req, res) => {
-  res.json(db.getTunesByUser(req.user.id));
+router.get('/', async (req, res) => {
+  try {
+    res.json(await db.getTunesByUser(req.user.id));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-router.get('/:id', (req, res) => {
-  const tune = db.getTuneById(req.params.id, req.user.id);
-  if (!tune) return res.status(404).json({ error: 'Tune not found.' });
-  res.json(tune);
+router.get('/:id', async (req, res) => {
+  try {
+    const tune = await db.getTuneById(req.params.id, req.user.id);
+    if (!tune) return res.status(404).json({ error: 'Tune not found.' });
+    res.json(tune);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-router.post('/', (req, res) => {
-  if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
-  const tune = db.createTune(req.user.id, req.body);
-  res.status(201).json(tune);
+router.post('/', async (req, res) => {
+  try {
+    if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
+    const tune = await db.createTune(req.user.id, req.body);
+    res.status(201).json(tune);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-router.put('/:id', (req, res) => {
-  if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
-  const tune = db.updateTune(req.params.id, req.user.id, req.body);
-  if (!tune) return res.status(404).json({ error: 'Tune not found.' });
-  res.json(tune);
+router.put('/:id', async (req, res) => {
+  try {
+    if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
+    const tune = await db.updateTune(req.params.id, req.user.id, req.body);
+    if (!tune) return res.status(404).json({ error: 'Tune not found.' });
+    res.json(tune);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-router.delete('/:id', (req, res) => {
-  db.deleteTune(req.params.id, req.user.id);
-  res.status(204).send();
+router.delete('/:id', async (req, res) => {
+  try {
+    await db.deleteTune(req.params.id, req.user.id);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// POST /api/tunes/import — upload and parse a CSV file
-router.post('/import', upload.single('csv'), (req, res) => {
+router.post('/import', upload.single('csv'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'CSV file is required.' });
 
   let records;
@@ -94,7 +117,7 @@ router.post('/import', upload.single('csv'), (req, res) => {
     .filter(t => t.name.length > 0);
 
   try {
-    const imported = db.insertManyTunes(req.user.id, tunes);
+    const imported = await db.insertManyTunes(req.user.id, tunes);
     res.json({ imported: imported.length });
   } catch (err) {
     res.status(500).json({ error: 'Database error during import: ' + err.message });

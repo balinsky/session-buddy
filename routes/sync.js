@@ -23,32 +23,38 @@ function generateSyncCode() {
   return `${adj}-${noun}-${num}`;
 }
 
-// POST /api/sync/new — generate a fresh sync code
-router.post('/new', (req, res) => {
-  let syncCode;
-  let attempts = 0;
-  do {
-    syncCode = generateSyncCode();
-    attempts++;
-  } while (db.getUserBySyncCode(syncCode) && attempts < 100);
+router.post('/new', async (req, res) => {
+  try {
+    let syncCode;
+    let attempts = 0;
+    do {
+      syncCode = generateSyncCode();
+      attempts++;
+    } while ((await db.getUserBySyncCode(syncCode)) && attempts < 100);
 
-  if (attempts >= 100) {
-    return res.status(500).json({ error: 'Could not generate a unique sync code, please try again.' });
+    if (attempts >= 100) {
+      return res.status(500).json({ error: 'Could not generate a unique sync code, please try again.' });
+    }
+
+    const user = await db.createUser(syncCode);
+    res.json({ syncCode: user.sync_code });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-
-  const user = db.createUser(syncCode);
-  res.json({ syncCode: user.sync_code });
 });
 
-// POST /api/sync/join — connect to an existing sync code
-router.post('/join', (req, res) => {
-  const { syncCode } = req.body;
-  if (!syncCode) return res.status(400).json({ error: 'Sync code required.' });
+router.post('/join', async (req, res) => {
+  try {
+    const { syncCode } = req.body;
+    if (!syncCode) return res.status(400).json({ error: 'Sync code required.' });
 
-  const user = db.getUserBySyncCode(syncCode.toLowerCase().trim());
-  if (!user) return res.status(404).json({ error: 'Sync code not found. Check for typos and try again.' });
+    const user = await db.getUserBySyncCode(syncCode.toLowerCase().trim());
+    if (!user) return res.status(404).json({ error: 'Sync code not found. Check for typos and try again.' });
 
-  res.json({ syncCode: user.sync_code });
+    res.json({ syncCode: user.sync_code });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

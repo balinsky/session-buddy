@@ -1,182 +1,258 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+const { Pool } = require('pg');
 
-const db = new Database(path.join(__dirname, 'session-buddy.db'));
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
 
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sync_code TEXT UNIQUE NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS tunes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    type TEXT,
-    key TEXT,
-    parts TEXT,
-    incipit_a TEXT,
-    incipit_b TEXT,
-    incipit_c TEXT,
-    learning_status TEXT DEFAULT 'Not Learned',
-    count INTEGER DEFAULT 0,
-    added_date TEXT,
-    where_learned TEXT,
-    who TEXT,
-    mnemonic TEXT,
-    tunebooks TEXT,
-    date_learned TEXT,
-    favorite INTEGER DEFAULT 0,
-    thesession_id TEXT,
-    setting TEXT,
-    notes TEXT,
-    composer TEXT,
-    last_practiced_date TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS sets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS set_tunes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    set_id INTEGER NOT NULL,
-    tune_id INTEGER NOT NULL,
-    position INTEGER NOT NULL,
-    FOREIGN KEY (set_id) REFERENCES sets(id) ON DELETE CASCADE,
-    FOREIGN KEY (tune_id) REFERENCES tunes(id) ON DELETE CASCADE
-  );
-`);
+async function init() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      sync_code TEXT UNIQUE NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tunes (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      type TEXT,
+      key TEXT,
+      parts TEXT,
+      incipit_a TEXT,
+      incipit_b TEXT,
+      incipit_c TEXT,
+      learning_status TEXT DEFAULT 'Not Learned',
+      count INTEGER DEFAULT 0,
+      added_date TEXT,
+      where_learned TEXT,
+      who TEXT,
+      mnemonic TEXT,
+      tunebooks TEXT,
+      date_learned TEXT,
+      favorite INTEGER DEFAULT 0,
+      thesession_id TEXT,
+      setting TEXT,
+      notes TEXT,
+      composer TEXT,
+      last_practiced_date TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sets (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS set_tunes (
+      id SERIAL PRIMARY KEY,
+      set_id INTEGER NOT NULL REFERENCES sets(id) ON DELETE CASCADE,
+      tune_id INTEGER NOT NULL REFERENCES tunes(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL
+    )
+  `);
+}
 
 // --- Users ---
 
-function getUserBySyncCode(syncCode) {
-  return db.prepare('SELECT * FROM users WHERE sync_code = ?').get(syncCode);
+async function getUserBySyncCode(syncCode) {
+  const { rows } = await pool.query('SELECT * FROM users WHERE sync_code = $1', [syncCode]);
+  return rows[0] || null;
 }
 
-function createUser(syncCode) {
-  const result = db.prepare('INSERT INTO users (sync_code) VALUES (?)').run(syncCode);
-  return db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
+async function createUser(syncCode) {
+  const { rows } = await pool.query(
+    'INSERT INTO users (sync_code) VALUES ($1) RETURNING *',
+    [syncCode]
+  );
+  return rows[0];
 }
 
 // --- Tunes ---
 
-function getTunesByUser(userId) {
-  return db.prepare('SELECT * FROM tunes WHERE user_id = ?').all(userId);
+async function getTunesByUser(userId) {
+  const { rows } = await pool.query('SELECT * FROM tunes WHERE user_id = $1', [userId]);
+  return rows;
 }
 
-function getTuneById(id, userId) {
-  return db.prepare('SELECT * FROM tunes WHERE id = ? AND user_id = ?').get(id, userId);
+async function getTuneById(id, userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM tunes WHERE id = $1 AND user_id = $2',
+    [id, userId]
+  );
+  return rows[0] || null;
 }
 
-const TUNE_FIELDS = `
-  name, type, key, parts, incipit_a, incipit_b, incipit_c,
-  learning_status, count, added_date, where_learned, who, mnemonic,
-  tunebooks, date_learned, favorite, thesession_id, setting, notes,
-  composer, last_practiced_date
-`;
-
-function tuneValues(data) {
+function tuneParams(userId, data) {
   return [
-    data.name, data.type || null, data.key || null, data.parts || null,
-    data.incipit_a || null, data.incipit_b || null, data.incipit_c || null,
+    userId,
+    data.name,
+    data.type || null,
+    data.key || null,
+    data.parts || null,
+    data.incipit_a || null,
+    data.incipit_b || null,
+    data.incipit_c || null,
     data.learning_status || 'Not Learned',
     parseInt(data.count) || 0,
-    data.added_date || null, data.where_learned || null, data.who || null,
-    data.mnemonic || null, data.tunebooks || null, data.date_learned || null,
+    data.added_date || null,
+    data.where_learned || null,
+    data.who || null,
+    data.mnemonic || null,
+    data.tunebooks || null,
+    data.date_learned || null,
     data.favorite ? 1 : 0,
-    data.thesession_id || null, data.setting || null,
-    data.notes || null, data.composer || null, data.last_practiced_date || null,
+    data.thesession_id || null,
+    data.setting || null,
+    data.notes || null,
+    data.composer || null,
+    data.last_practiced_date || null,
   ];
 }
 
-function createTune(userId, data) {
-  const stmt = db.prepare(`
-    INSERT INTO tunes (user_id, ${TUNE_FIELDS})
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-  const result = stmt.run(userId, ...tuneValues(data));
-  return getTuneById(result.lastInsertRowid, userId);
+async function createTune(userId, data) {
+  const { rows } = await pool.query(`
+    INSERT INTO tunes (
+      user_id, name, type, key, parts,
+      incipit_a, incipit_b, incipit_c,
+      learning_status, count, added_date, where_learned, who,
+      mnemonic, tunebooks, date_learned, favorite,
+      thesession_id, setting, notes, composer, last_practiced_date
+    ) VALUES (
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+    ) RETURNING *`,
+    tuneParams(userId, data)
+  );
+  return rows[0];
 }
 
-function updateTune(id, userId, data) {
-  const stmt = db.prepare(`
+async function updateTune(id, userId, data) {
+  const params = [...tuneParams(userId, data).slice(1), id, userId];
+  const { rows } = await pool.query(`
     UPDATE tunes SET
-      name = ?, type = ?, key = ?, parts = ?,
-      incipit_a = ?, incipit_b = ?, incipit_c = ?,
-      learning_status = ?, count = ?, added_date = ?,
-      where_learned = ?, who = ?, mnemonic = ?, tunebooks = ?,
-      date_learned = ?, favorite = ?, thesession_id = ?,
-      setting = ?, notes = ?, composer = ?, last_practiced_date = ?
-    WHERE id = ? AND user_id = ?
-  `);
-  stmt.run(...tuneValues(data), id, userId);
-  return getTuneById(id, userId);
+      name=$1, type=$2, key=$3, parts=$4,
+      incipit_a=$5, incipit_b=$6, incipit_c=$7,
+      learning_status=$8, count=$9, added_date=$10,
+      where_learned=$11, who=$12, mnemonic=$13, tunebooks=$14,
+      date_learned=$15, favorite=$16, thesession_id=$17,
+      setting=$18, notes=$19, composer=$20, last_practiced_date=$21
+    WHERE id=$22 AND user_id=$23
+    RETURNING *`,
+    params
+  );
+  return rows[0] || null;
 }
 
-function deleteTune(id, userId) {
-  db.prepare('DELETE FROM tunes WHERE id = ? AND user_id = ?').run(id, userId);
+async function deleteTune(id, userId) {
+  await pool.query('DELETE FROM tunes WHERE id = $1 AND user_id = $2', [id, userId]);
 }
 
-const insertManyTunes = db.transaction((userId, tunes) => {
-  return tunes.map(tune => createTune(userId, tune));
-});
+async function insertManyTunes(userId, tunes) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const results = [];
+    for (const tune of tunes) {
+      const { rows } = await client.query(`
+        INSERT INTO tunes (
+          user_id, name, type, key, parts,
+          incipit_a, incipit_b, incipit_c,
+          learning_status, count, added_date, where_learned, who,
+          mnemonic, tunebooks, date_learned, favorite,
+          thesession_id, setting, notes, composer, last_practiced_date
+        ) VALUES (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+        ) RETURNING *`,
+        tuneParams(userId, tune)
+      );
+      results.push(rows[0]);
+    }
+    await client.query('COMMIT');
+    return results;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
 // --- Sets ---
 
-function getSetTunes(setId) {
-  return db.prepare(`
+async function getSetTunes(setId) {
+  const { rows } = await pool.query(`
     SELECT t.*, st.position
     FROM tunes t
     JOIN set_tunes st ON t.id = st.tune_id
-    WHERE st.set_id = ?
-    ORDER BY st.position
-  `).all(setId);
+    WHERE st.set_id = $1
+    ORDER BY st.position`,
+    [setId]
+  );
+  return rows;
 }
 
-function getSetsByUser(userId) {
-  const sets = db.prepare('SELECT * FROM sets WHERE user_id = ? ORDER BY created_at DESC').all(userId);
-  return sets.map(set => ({ ...set, tunes: getSetTunes(set.id) }));
+async function getSetsByUser(userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM sets WHERE user_id = $1 ORDER BY created_at DESC',
+    [userId]
+  );
+  return Promise.all(rows.map(async set => ({
+    ...set,
+    tunes: await getSetTunes(set.id),
+  })));
 }
 
-function getSetById(id, userId) {
-  const set = db.prepare('SELECT * FROM sets WHERE id = ? AND user_id = ?').get(id, userId);
-  if (!set) return null;
-  return { ...set, tunes: getSetTunes(id) };
+async function getSetById(id, userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM sets WHERE id = $1 AND user_id = $2',
+    [id, userId]
+  );
+  if (!rows[0]) return null;
+  return { ...rows[0], tunes: await getSetTunes(id) };
 }
 
-function createSet(userId, tuneIds) {
-  const result = db.prepare('INSERT INTO sets (user_id) VALUES (?)').run(userId);
-  const setId = result.lastInsertRowid;
-  const insertTune = db.prepare('INSERT INTO set_tunes (set_id, tune_id, position) VALUES (?, ?, ?)');
-  tuneIds.forEach((tuneId, i) => insertTune.run(setId, tuneId, i));
+async function createSet(userId, tuneIds) {
+  const { rows } = await pool.query(
+    'INSERT INTO sets (user_id) VALUES ($1) RETURNING *',
+    [userId]
+  );
+  const setId = rows[0].id;
+  for (let i = 0; i < tuneIds.length; i++) {
+    await pool.query(
+      'INSERT INTO set_tunes (set_id, tune_id, position) VALUES ($1, $2, $3)',
+      [setId, tuneIds[i], i]
+    );
+  }
   return getSetById(setId, userId);
 }
 
-function updateSet(id, userId, tuneIds) {
-  const existing = db.prepare('SELECT id FROM sets WHERE id = ? AND user_id = ?').get(id, userId);
-  if (!existing) return null;
-  db.prepare('DELETE FROM set_tunes WHERE set_id = ?').run(id);
-  const insertTune = db.prepare('INSERT INTO set_tunes (set_id, tune_id, position) VALUES (?, ?, ?)');
-  tuneIds.forEach((tuneId, i) => insertTune.run(id, tuneId, i));
+async function updateSet(id, userId, tuneIds) {
+  const { rows } = await pool.query(
+    'SELECT id FROM sets WHERE id = $1 AND user_id = $2',
+    [id, userId]
+  );
+  if (!rows[0]) return null;
+  await pool.query('DELETE FROM set_tunes WHERE set_id = $1', [id]);
+  for (let i = 0; i < tuneIds.length; i++) {
+    await pool.query(
+      'INSERT INTO set_tunes (set_id, tune_id, position) VALUES ($1, $2, $3)',
+      [id, tuneIds[i], i]
+    );
+  }
   return getSetById(id, userId);
 }
 
-function deleteSet(id, userId) {
-  db.prepare('DELETE FROM sets WHERE id = ? AND user_id = ?').run(id, userId);
+async function deleteSet(id, userId) {
+  await pool.query('DELETE FROM sets WHERE id = $1 AND user_id = $2', [id, userId]);
 }
 
 module.exports = {
+  init,
   getUserBySyncCode, createUser,
   getTunesByUser, getTuneById, createTune, updateTune, deleteTune, insertManyTunes,
   getSetsByUser, getSetById, createSet, updateSet, deleteSet,
