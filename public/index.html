@@ -164,6 +164,27 @@
 
           <div class="form-row">
             <div class="form-group">
+              <label for="f-instrument">Instrument</label>
+              <select id="f-instrument" name="instrument">
+                <option value="">— Select —</option>
+                <option>Bb Whistle</option>
+                <option>C Whistle</option>
+                <option>Concertina</option>
+                <option>D Flute</option>
+                <option>D Generic</option>
+                <option>Fiddle</option>
+                <option>High D Whistle</option>
+                <option>Low F Whistle</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-sequence-id">Sequence ID</label>
+              <input id="f-sequence-id" name="sequence_id" type="text" placeholder="e.g. WK-2024-03" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
               <label for="f-who">Learned from</label>
               <input id="f-who" name="who" type="text" />
             </div>
@@ -274,7 +295,7 @@
           <div id="import-status" class="import-status"></div>
         </div>
         <div class="import-notes">
-          <strong>Expected columns:</strong> Name, Type, Key, Parts, Incipit A, Incipit B, Incipit C, Count, Added, Where, Who, Mnemonic, Tunebooks, Date Learned, Favorite, Thesession ID, Setting, Notes, Composer, Last Practiced Date
+          <strong>Expected columns:</strong> Name, Type, Key, Parts, Incipit A, Incipit B, Incipit C, Count, Added, Where, Who, Mnemonic, Tunebooks, Date Learned, Favorite, Thesession ID, Setting, Notes, Composer, Last Practiced Date, Instrument, Sequence ID
           <br/><br/>
           <strong>Learning status:</strong> Include a <code>Learned</code> column — <code>X</code> imports as Memorized, anything else imports as Not Learned. The "Learning" status is set manually in the app.
         </div>

@@ -112,6 +112,8 @@ router.post('/import', upload.single('csv'), async (req, res) => {
         notes: row['Notes'] || '',
         composer: row['Composer'] || '',
         last_practiced_date: row['Last Practiced Date'] || '',
+        instrument: row['Instrument'] || '',
+        sequence_id: row['Sequence ID'] || '',
       };
     })
     .filter(t => t.name.length > 0);

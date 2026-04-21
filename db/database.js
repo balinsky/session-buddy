@@ -55,6 +55,9 @@ async function init() {
       position INTEGER NOT NULL
     )
   `);
+  // Add new columns to existing databases that predate these fields
+  await pool.query(`ALTER TABLE tunes ADD COLUMN IF NOT EXISTS instrument TEXT`);
+  await pool.query(`ALTER TABLE tunes ADD COLUMN IF NOT EXISTS sequence_id TEXT`);
 }
 
 // --- Users ---
@@ -111,6 +114,8 @@ function tuneParams(userId, data) {
     data.notes || null,
     data.composer || null,
     data.last_practiced_date || null,
+    data.instrument || null,
+    data.sequence_id || null,
   ];
 }
 
@@ -121,9 +126,10 @@ async function createTune(userId, data) {
       incipit_a, incipit_b, incipit_c,
       learning_status, count, added_date, where_learned, who,
       mnemonic, tunebooks, date_learned, favorite,
-      thesession_id, setting, notes, composer, last_practiced_date
+      thesession_id, setting, notes, composer, last_practiced_date,
+      instrument, sequence_id
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
     ) RETURNING *`,
     tuneParams(userId, data)
   );
@@ -139,8 +145,9 @@ async function updateTune(id, userId, data) {
       learning_status=$8, count=$9, added_date=$10,
       where_learned=$11, who=$12, mnemonic=$13, tunebooks=$14,
       date_learned=$15, favorite=$16, thesession_id=$17,
-      setting=$18, notes=$19, composer=$20, last_practiced_date=$21
-    WHERE id=$22 AND user_id=$23
+      setting=$18, notes=$19, composer=$20, last_practiced_date=$21,
+      instrument=$22, sequence_id=$23
+    WHERE id=$24 AND user_id=$25
     RETURNING *`,
     params
   );
@@ -163,9 +170,10 @@ async function insertManyTunes(userId, tunes) {
           incipit_a, incipit_b, incipit_c,
           learning_status, count, added_date, where_learned, who,
           mnemonic, tunebooks, date_learned, favorite,
-          thesession_id, setting, notes, composer, last_practiced_date
+          thesession_id, setting, notes, composer, last_practiced_date,
+          instrument, sequence_id
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
         ) RETURNING *`,
         tuneParams(userId, tune)
       );

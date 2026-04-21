@@ -270,6 +270,8 @@ function renderTuneDetail(tune) {
 
   // Always-visible fields
   const visibleFields = [];
+  if (tune.instrument) visibleFields.push(['Instrument', esc(tune.instrument)]);
+  if (tune.sequence_id) visibleFields.push(['Sequence ID', esc(tune.sequence_id)]);
   if (tune.mnemonic) visibleFields.push(['Mnemonic', esc(tune.mnemonic)]);
   if (tune.composer) visibleFields.push(['Composer', esc(tune.composer)]);
   if (tune.notes) visibleFields.push(['Notes', esc(tune.notes)]);
@@ -357,6 +359,8 @@ function goToTuneForm(tune = null) {
     form.elements['where_learned'].value = tune.where_learned || '';
     form.elements['tunebooks'].value = tune.tunebooks || '';
     form.elements['mnemonic'].value = tune.mnemonic || '';
+    form.elements['instrument'].value = tune.instrument || '';
+    form.elements['sequence_id'].value = tune.sequence_id || '';
     form.elements['composer'].value = tune.composer || '';
     form.elements['count'].value = tune.count || '';
     form.elements['added_date'].value = tune.added_date || '';
@@ -393,6 +397,8 @@ async function saveTuneForm(e) {
     where_learned: form.elements['where_learned'].value.trim(),
     tunebooks: form.elements['tunebooks'].value.trim(),
     mnemonic: form.elements['mnemonic'].value.trim(),
+    instrument: form.elements['instrument'].value,
+    sequence_id: form.elements['sequence_id'].value.trim(),
     composer: form.elements['composer'].value.trim(),
     count: form.elements['count'].value,
     added_date: form.elements['added_date'].value.trim(),
