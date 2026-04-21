@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>Session Buddy</title>
+  <link rel="stylesheet" href="/css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/abcjs@6.2.3/dist/abcjs-basic-min.js"></script>
+</head>
+<body>
+  <div id="app">
+
+    <!-- ===== HEADER ===== -->
+    <header id="app-header">
+      <button id="back-btn" class="icon-btn hidden" aria-label="Go back">&#8592;</button>
+      <h1 id="header-title">Session Buddy</h1>
+      <button id="sync-btn" class="icon-btn" aria-label="Sync settings">&#9881;</button>
+    </header>
+
+    <!-- ===== VIEWS ===== -->
+    <main id="main-content">
+
+      <!-- WELCOME / SYNC CODE -->
+      <div id="view-welcome" class="view active">
+        <div class="welcome-card">
+          <div class="welcome-logo">&#119070;</div>
+          <h2>Session Buddy</h2>
+          <p class="welcome-subtitle">Track your Irish trad tunes and sets</p>
+          <div class="welcome-actions">
+            <button id="btn-new-code" class="btn btn-primary btn-large">Start New Collection</button>
+            <div class="divider-text">or</div>
+            <div class="join-form">
+              <input id="input-sync-code" type="text" placeholder="Enter sync code (e.g. swift-glen-42)" autocorrect="off" autocapitalize="none" spellcheck="false" />
+              <button id="btn-join-code" class="btn btn-secondary">Join Existing</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TUNES LIST -->
+      <div id="view-tunes" class="view">
+        <div class="view-toolbar">
+          <h2>My Tunes</h2>
+          <div class="toolbar-actions">
+            <button id="btn-import" class="btn btn-small btn-outline">Import CSV</button>
+            <button id="btn-add-tune" class="btn btn-small btn-primary">+ Add</button>
+          </div>
+        </div>
+        <div class="search-bar">
+          <input id="tune-search" type="search" placeholder="Search tunes..." />
+        </div>
+        <div id="tune-list" class="item-list"></div>
+      </div>
+
+      <!-- TUNE DETAIL -->
+      <div id="view-tune-detail" class="view">
+        <div id="tune-detail-content"></div>
+      </div>
+
+      <!-- TUNE FORM (Add / Edit) -->
+      <div id="view-tune-form" class="view">
+        <h2 id="tune-form-title">Add Tune</h2>
+        <form id="tune-form" class="detail-form" novalidate>
+
+          <div class="form-section-title">Basic Info</div>
+
+          <div class="form-group required">
+            <label for="f-name">Name</label>
+            <input id="f-name" name="name" type="text" required />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="f-type">Type</label>
+              <select id="f-type" name="type">
+                <option value="">— Select —</option>
+                <option>Reel</option>
+                <option>Jig</option>
+                <option>Slip Jig</option>
+                <option>Hornpipe</option>
+                <option>Polka</option>
+                <option>Slide</option>
+                <option>Air</option>
+                <option>Barndance</option>
+                <option>Fling</option>
+                <option>Gavotte</option>
+                <option>Highland</option>
+                <option>Hop Jig</option>
+                <option>March</option>
+                <option>Mazurka</option>
+                <option>Ridee</option>
+                <option>Rond</option>
+                <option>Shetland</option>
+                <option>Strathspey</option>
+                <option>Waltz</option>
+                <option>3/2 Tune</option>
+                <option>7/8 Tune</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="f-key">Key</label>
+              <input id="f-key" name="key" type="text" placeholder="e.g. D, Ador" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="f-parts">Parts</label>
+              <input id="f-parts" name="parts" type="text" placeholder="e.g. 2" />
+            </div>
+            <div class="form-group">
+              <label for="f-status">Learning Status</label>
+              <select id="f-status" name="learning_status">
+                <option value="Not Learned">Not Learned</option>
+                <option value="Learning">Learning</option>
+                <option value="Memorized">Memorized</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>
+              <input id="f-favorite" name="favorite" type="checkbox" />
+              Favorite
+            </label>
+          </div>
+
+          <div class="form-section-title">Incipits <span class="form-hint">(ABC notation)</span></div>
+
+          <div class="form-group">
+            <label for="f-incipit-a">Incipit A</label>
+            <input id="f-incipit-a" name="incipit_a" type="text" placeholder="e.g. DEGA BGAG" class="abc-input" data-preview="preview-a" />
+            <div id="preview-a" class="abc-preview"></div>
+          </div>
+
+          <div class="form-group">
+            <label for="f-incipit-b">Incipit B <span class="optional">(optional)</span></label>
+            <input id="f-incipit-b" name="incipit_b" type="text" placeholder="e.g. dBAG FGAF" class="abc-input" data-preview="preview-b" />
+            <div id="preview-b" class="abc-preview"></div>
+          </div>
+
+          <div class="form-group">
+            <label for="f-incipit-c">Incipit C <span class="optional">(optional)</span></label>
+            <input id="f-incipit-c" name="incipit_c" type="text" placeholder="(optional)" class="abc-input" data-preview="preview-c" />
+            <div id="preview-c" class="abc-preview"></div>
+          </div>
+
+          <div class="form-section-title">thesession.org</div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="f-thesession-id">Tune ID</label>
+              <input id="f-thesession-id" name="thesession_id" type="text" />
+            </div>
+            <div class="form-group">
+              <label for="f-setting">Setting</label>
+              <input id="f-setting" name="setting" type="text" />
+            </div>
+          </div>
+
+          <div class="form-section-title">Session Info</div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="f-who">Learned from</label>
+              <input id="f-who" name="who" type="text" />
+            </div>
+            <div class="form-group">
+              <label for="f-where">Where</label>
+              <input id="f-where" name="where_learned" type="text" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="f-tunebooks">Tunebooks</label>
+            <input id="f-tunebooks" name="tunebooks" type="text" />
+          </div>
+
+          <div class="form-group">
+            <label for="f-mnemonic">Mnemonic</label>
+            <input id="f-mnemonic" name="mnemonic" type="text" placeholder="Memory aid" />
+          </div>
+
+          <div class="form-section-title">Other</div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="f-composer">Composer</label>
+              <input id="f-composer" name="composer" type="text" />
+            </div>
+            <div class="form-group">
+              <label for="f-count">Heard count</label>
+              <input id="f-count" name="count" type="number" min="0" placeholder="0" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="f-added-date">Date Added</label>
+              <input id="f-added-date" name="added_date" type="text" placeholder="e.g. 2024-01-15" />
+            </div>
+            <div class="form-group">
+              <label for="f-date-learned">Date Learned</label>
+              <input id="f-date-learned" name="date_learned" type="text" placeholder="e.g. 2024-06-01" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="f-last-practiced">Last Practiced</label>
+            <input id="f-last-practiced" name="last_practiced_date" type="text" placeholder="e.g. 2024-12-10" />
+          </div>
+
+          <div class="form-group">
+            <label for="f-notes">Notes</label>
+            <textarea id="f-notes" name="notes" rows="3"></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary btn-large">Save Tune</button>
+            <button type="button" id="btn-cancel-tune-form" class="btn btn-outline btn-large">Cancel</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- SETS LIST -->
+      <div id="view-sets" class="view">
+        <div class="view-toolbar">
+          <h2>My Sets</h2>
+          <button id="btn-add-set" class="btn btn-small btn-primary">+ New Set</button>
+        </div>
+        <div id="set-list" class="item-list"></div>
+      </div>
+
+      <!-- SET DETAIL -->
+      <div id="view-set-detail" class="view">
+        <div id="set-detail-content"></div>
+      </div>
+
+      <!-- SET FORM (Build a Set) -->
+      <div id="view-set-form" class="view">
+        <h2>Build a Set</h2>
+        <p class="hint">Select 2–3 tunes in playing order.</p>
+
+        <div class="selected-tunes-area">
+          <div class="selected-tunes-label">Selected tunes:</div>
+          <div id="selected-tunes-list" class="selected-tunes-list">
+            <span class="empty-hint">None yet</span>
+          </div>
+        </div>
+
+        <div class="search-bar">
+          <input id="set-form-search" type="search" placeholder="Search tunes to add..." />
+        </div>
+        <div id="set-form-tune-list" class="item-list pickable"></div>
+
+        <div class="form-actions">
+          <button id="btn-save-set" class="btn btn-primary btn-large">Save Set</button>
+          <button id="btn-cancel-set-form" class="btn btn-outline btn-large">Cancel</button>
+        </div>
+      </div>
+
+      <!-- CSV IMPORT -->
+      <div id="view-import" class="view">
+        <h2>Import from CSV</h2>
+        <p class="hint">Upload a CSV file with your tunes. New tunes will be added to your existing collection.</p>
+        <div class="import-area">
+          <label class="file-drop-zone" id="csv-drop-zone">
+            <span id="csv-file-label">Tap to choose a CSV file</span>
+            <input id="csv-file-input" type="file" accept=".csv" style="display:none" />
+          </label>
+          <button id="btn-run-import" class="btn btn-primary btn-large" disabled>Import Tunes</button>
+          <div id="import-status" class="import-status"></div>
+        </div>
+        <div class="import-notes">
+          <strong>Expected columns:</strong> Name, Type, Key, Parts, Incipit A, Incipit B, Incipit C, Count, Added, Where, Who, Mnemonic, Tunebooks, Date Learned, Favorite, Thesession ID, Setting, Notes, Composer, Last Practiced Date
+          <br/><br/>
+          <strong>Learning status:</strong> Include a <code>Learned</code> column — <code>X</code> imports as Memorized, anything else imports as Not Learned. The "Learning" status is set manually in the app.
+        </div>
+      </div>
+
+      <!-- SYNC CODE MODAL -->
+      <div id="modal-sync" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card">
+          <h3>Your Sync Code</h3>
+          <p>Use this code to access your tunes on another device.</p>
+          <div id="display-sync-code" class="sync-code-display"></div>
+          <p class="hint">Write it down — you'll need it to sync other devices.</p>
+          <button id="btn-close-sync-modal" class="btn btn-primary">Done</button>
+          <hr />
+          <button id="btn-change-code" class="btn btn-outline btn-small">Switch to a different code</button>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- ===== BOTTOM NAV ===== -->
+    <nav id="bottom-nav" class="hidden">
+      <button id="nav-tunes" class="nav-btn active" data-view="tunes">
+        <span class="nav-icon">&#119070;</span>
+        <span class="nav-label">Tunes</span>
+      </button>
+      <button id="nav-sets" class="nav-btn" data-view="sets">
+        <span class="nav-icon">&#127925;</span>
+        <span class="nav-label">Sets</span>
+      </button>
+    </nav>
+
+  </div><!-- #app -->
+
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
