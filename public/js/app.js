@@ -699,7 +699,7 @@ function renderSetList(sets) {
     favSets.forEach(set => { html += renderSetCard(set); });
   }
   if (otherSets.length > 0) {
-    if (favSets.length > 0) html += `<div class="status-group-header">All Sets (${otherSets.length})</div>`;
+    if (favSets.length > 0) html += `<div class="status-group-header">Sets (${otherSets.length})</div>`;
     otherSets.forEach(set => { html += renderSetCard(set); });
   }
 
@@ -943,7 +943,9 @@ function renderSetFormTuneList(searchQuery) {
   if (query) {
     tunes = tunes.filter(t =>
       t.name.toLowerCase().includes(query) ||
-      (t.type || '').toLowerCase().includes(query)
+      (t.type || '').toLowerCase().includes(query) ||
+      (t.thesession_id || '').toLowerCase().includes(query) ||
+      (t.sequence_id || '').toLowerCase().includes(query)
     );
   }
 
