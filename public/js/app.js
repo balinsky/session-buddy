@@ -131,8 +131,14 @@ function setDisplayName(set) {
 function setTypeLabel(set) {
   const types = [...new Set((set.tunes || []).map(t => t.type).filter(Boolean))];
   if (types.length === 0) return '';
-  if (types.length === 1) return types[0];
-  return 'Mixed';
+  if (types.length > 1) return 'Mixed';
+  const type = types[0];
+  if (type === 'Slip Jig') return 'Slip Jigs';
+  if (type === 'Hop Jig') return 'Hop Jigs';
+  if (type === '3/2 Tune') return '3/2 Tunes';
+  if (type === '7/8 Tune') return '7/8 Tunes';
+  if (type === 'Air') return 'Airs';
+  return type + 's';
 }
 
 function showError(msg) {
