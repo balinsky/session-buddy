@@ -29,6 +29,12 @@ const METER_BY_TYPE = {
 };
 
 const STATUS_ORDER = { 'Memorized': 0, 'Learning': 1, 'Not Learned': 2 };
+const STATUS_CYCLE = ['Not Learned', 'Learning', 'Memorized'];
+
+function nextStatus(current) {
+  const idx = STATUS_CYCLE.indexOf(current);
+  return STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
+}
 
 // ===== STATE =====
 
@@ -38,6 +44,7 @@ const state = {
   editingSet: null,    // set object being edited (null = new)
   selectedTuneIds: [], // tune IDs chosen in set builder
   backStack: [],       // navigation history for back button
+  tuneSearch: '',      // current search query on tunes view
 };
 
 // ===== UTILITIES =====
@@ -204,7 +211,7 @@ function renderTuneList(tunes, searchQuery) {
           <div class="tune-card-name">${esc(tune.name)}${fav}</div>
           <div class="tune-card-meta">
             ${typKey ? `<span class="tune-card-type-key">${esc(typKey)}</span>` : ''}
-            <span class="status-badge ${sc}">${esc(tune.learning_status || 'Not Learned')}</span>
+            <span class="status-badge ${sc} tappable" data-id="${tune.id}" data-status="${tune.learning_status || 'Not Learned'}" title="Tap to change status">${esc(tune.learning_status || 'Not Learned')} ↻</span>
           </div>
         </div>`;
     });
@@ -213,7 +220,37 @@ function renderTuneList(tunes, searchQuery) {
   container.innerHTML = html;
 
   container.querySelectorAll('.list-card').forEach(card => {
-    card.addEventListener('click', () => goToTuneDetail(Number(card.dataset.id)));
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.status-badge.tappable')) return; // handled separately
+      goToTuneDetail(Number(card.dataset.id));
+    });
+  });
+
+  container.querySelectorAll('.status-badge.tappable').forEach(badge => {
+    badge.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const tuneId = Number(badge.dataset.id);
+      const currentStatus = badge.dataset.status;
+      const newStatus = nextStatus(currentStatus);
+      const tune = state.tunes.find(t => t.id === tuneId);
+      if (!tune) return;
+
+      // Optimistic update
+      badge.dataset.status = newStatus;
+      const newSc = statusClass(newStatus);
+      badge.className = `status-badge ${newSc} tappable`;
+      badge.textContent = newStatus + ' ↻';
+
+      try {
+        const updated = await API.updateTune(tuneId, { ...tune, learning_status: newStatus });
+        const idx = state.tunes.findIndex(t => t.id === tuneId);
+        if (idx !== -1) state.tunes[idx] = updated;
+        renderTuneList(state.tunes, state.tuneSearch);
+      } catch (err) {
+        showError('Could not update status: ' + err.message);
+        renderTuneList(state.tunes, state.tuneSearch); // revert
+      }
+    });
   });
 }
 
@@ -243,7 +280,11 @@ function renderTuneDetail(tune) {
         ${tune.type ? `<span class="detail-meta-item">${esc(tune.type)}</span>` : ''}
         ${tune.key ? `<span class="detail-meta-item">&#9835; ${esc(tune.key)}</span>` : ''}
         ${tune.parts ? `<span class="detail-meta-item">${esc(tune.parts)} parts</span>` : ''}
-        <span class="status-badge ${sc}">${esc(tune.learning_status || 'Not Learned')}</span>
+      </div>
+      <div class="status-control" id="status-control">
+        ${['Not Learned', 'Learning', 'Memorized'].map(s => `
+          <button class="status-btn ${statusClass(s)}${s === (tune.learning_status || 'Not Learned') ? ' active' : ''}" data-status="${s}">${s}</button>
+        `).join('')}
       </div>
       <div class="detail-actions">
         <button class="btn btn-outline btn-small" id="btn-edit-tune">Edit</button>
@@ -278,7 +319,6 @@ function renderTuneDetail(tune) {
   if (tune.tunebooks) visibleFields.push(['Tunebooks', esc(tune.tunebooks)]);
   if (sessionUrl) visibleFields.push(['thesession.org', `<a href="${sessionUrl}" target="_blank" rel="noopener">View on thesession.org &#8599;</a>`]);
   if (tune.count) visibleFields.push(['Heard count', esc(tune.count)]);
-  if (tune.last_practiced_date) visibleFields.push(['Last Practiced', esc(tune.last_practiced_date)]);
 
   if (visibleFields.length > 0) {
     html += `<div class="detail-card"><div class="detail-card-title">Details</div>`;
@@ -287,6 +327,17 @@ function renderTuneDetail(tune) {
     });
     html += `</div>`;
   }
+
+  // Last Practiced — always shown with a Today button
+  html += `
+    <div class="detail-card">
+      <div class="detail-card-title">Practice</div>
+      <div class="detail-field">
+        <span class="detail-field-label">Last Practiced</span>
+        <span class="detail-field-value" id="last-practiced-value">${esc(tune.last_practiced_date) || '<em>Not recorded</em>'}</span>
+        <button class="btn btn-small btn-primary" id="btn-today">Today</button>
+      </div>
+    </div>`;
 
   // Hidden fields (behind "Show more")
   const hiddenFields = [];
@@ -322,6 +373,37 @@ function renderTuneDetail(tune) {
   // Event handlers
   document.getElementById('btn-edit-tune').addEventListener('click', () => goToTuneForm(tune));
   document.getElementById('btn-delete-tune').addEventListener('click', () => deleteTune(tune));
+
+  document.getElementById('status-control').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.status-btn');
+    if (!btn || btn.classList.contains('active')) return;
+    const newStatus = btn.dataset.status;
+    try {
+      const updated = await API.updateTune(tune.id, { ...tune, learning_status: newStatus });
+      tune.learning_status = newStatus;
+      document.querySelectorAll('.status-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.status === newStatus);
+      });
+      const idx = state.tunes.findIndex(t => t.id === updated.id);
+      if (idx !== -1) state.tunes[idx] = updated;
+    } catch (e) {
+      showError('Could not update status: ' + e.message);
+    }
+  });
+
+  document.getElementById('btn-today').addEventListener('click', async () => {
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      const updated = await API.updateTune(tune.id, { ...tune, last_practiced_date: today });
+      document.getElementById('last-practiced-value').textContent = today;
+      tune.last_practiced_date = today;
+      // Keep tunes cache current
+      const idx = state.tunes.findIndex(t => t.id === updated.id);
+      if (idx !== -1) state.tunes[idx] = updated;
+    } catch (e) {
+      showError('Could not update: ' + e.message);
+    }
+  });
 
   const showMoreBtn = document.getElementById('btn-show-more');
   if (showMoreBtn) {
@@ -776,7 +858,8 @@ function init() {
 
   // Tune list search
   document.getElementById('tune-search').addEventListener('input', e => {
-    renderTuneList(state.tunes, e.target.value);
+    state.tuneSearch = e.target.value;
+    renderTuneList(state.tunes, state.tuneSearch);
   });
 
   // Add tune / import buttons
