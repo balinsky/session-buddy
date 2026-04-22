@@ -84,39 +84,52 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     return res.status(400).json({ error: 'Could not parse CSV: ' + err.message });
   }
 
+  // Case-insensitive column lookup
+  function col(row, name) {
+    if (row[name] !== undefined) return row[name] || '';
+    const key = Object.keys(row).find(k => k.toLowerCase() === name.toLowerCase());
+    return key ? (row[key] || '') : '';
+  }
+
   const tunes = records
     .map(row => {
-      const learnedCol = row['Learned'] || row['learned'] || row['LEARNED'] || '';
+      const learnedCol = col(row, 'Learned');
       const isMemorized = learnedCol.toUpperCase() === 'X';
-      const dateLearned = row['Date Learned'] || '';
 
       return {
-        name: row['Name'] || '',
-        type: row['Type'] || '',
-        key: row['Key'] || '',
-        parts: row['Parts'] || '',
-        incipit_a: row['Incipit A'] || '',
-        incipit_b: row['Incipit B'] || '',
-        incipit_c: row['Incipit C'] || '',
+        name: col(row, 'Name'),
+        type: col(row, 'Type'),
+        key: col(row, 'Key'),
+        parts: col(row, 'Parts'),
+        incipit_a: col(row, 'Incipit A'),
+        incipit_b: col(row, 'Incipit B'),
+        incipit_c: col(row, 'Incipit C'),
         learning_status: isMemorized ? 'Memorized' : 'Not Learned',
-        count: parseInt(row['Count']) || 0,
-        added_date: row['Added'] || '',
-        where_learned: row['Where'] || '',
-        who: row['Who'] || '',
-        mnemonic: row['Mnemonic'] || '',
-        tunebooks: row['Tunebooks'] || '',
-        date_learned: dateLearned,
-        favorite: (row['Favorite'] || '').toUpperCase() === 'X' ? 1 : 0,
-        thesession_id: row['Thesession ID'] || '',
-        setting: row['Setting'] || '',
-        notes: row['Notes'] || '',
-        composer: row['Composer'] || '',
-        last_practiced_date: row['Last Practiced Date'] || '',
-        instrument: row['Instrument'] || '',
-        sequence_id: row['Sequence ID'] || '',
+        count: parseInt(col(row, 'Count')) || 0,
+        added_date: col(row, 'Added'),
+        where_learned: col(row, 'Where'),
+        who: col(row, 'Who'),
+        mnemonic: col(row, 'Mnemonic'),
+        tunebooks: col(row, 'Tunebooks'),
+        date_learned: col(row, 'Date Learned'),
+        favorite: col(row, 'Favorite').toUpperCase() === 'X' ? 1 : 0,
+        thesession_id: col(row, 'Thesession ID'),
+        setting: col(row, 'Setting'),
+        notes: col(row, 'Notes'),
+        composer: col(row, 'Composer'),
+        last_practiced_date: col(row, 'Last Practiced Date'),
+        instrument: col(row, 'Instrument'),
+        sequence_id: col(row, 'Sequence ID'),
       };
     })
     .filter(t => t.name.length > 0);
+
+  if (records.length > 0 && tunes.length === 0) {
+    const foundColumns = Object.keys(records[0]).join(', ');
+    return res.status(400).json({
+      error: `No tunes imported. The CSV has ${records.length} rows but none have a value in the Name column. Columns found: ${foundColumns}`
+    });
+  }
 
   try {
     const imported = await db.insertManyTunes(req.user.id, tunes);
