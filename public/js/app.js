@@ -666,6 +666,7 @@ function renderSelectedTunes() {
     return;
   }
 
+  const last = state.selectedTuneIds.length - 1;
   let html = '';
   state.selectedTuneIds.forEach((id, idx) => {
     const tune = state.tunes.find(t => t.id === id);
@@ -674,6 +675,10 @@ function renderSelectedTunes() {
       <div class="selected-tune-item">
         <span class="tune-pos">${idx + 1}.</span>
         <span class="tune-name">${esc(tune.name)}</span>
+        <div class="tune-order-btns">
+          <button class="btn-move-up" data-idx="${idx}" aria-label="Move up" ${idx === 0 ? 'disabled' : ''}>&#8593;</button>
+          <button class="btn-move-down" data-idx="${idx}" aria-label="Move down" ${idx === last ? 'disabled' : ''}>&#8595;</button>
+        </div>
         <button class="btn-remove-tune" data-id="${id}" aria-label="Remove">&#10005;</button>
       </div>`;
   });
@@ -687,6 +692,17 @@ function renderSelectedTunes() {
       state.selectedTuneIds = state.selectedTuneIds.filter(x => x !== id);
       renderSelectedTunes();
       renderSetFormTuneList(document.getElementById('set-form-search').value);
+    });
+  });
+
+  container.querySelectorAll('.btn-move-up, .btn-move-down').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = Number(btn.dataset.idx);
+      const swapWith = btn.classList.contains('btn-move-up') ? idx - 1 : idx + 1;
+      [state.selectedTuneIds[idx], state.selectedTuneIds[swapWith]] =
+        [state.selectedTuneIds[swapWith], state.selectedTuneIds[idx]];
+      renderSelectedTunes();
     });
   });
 }

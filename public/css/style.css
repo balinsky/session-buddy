@@ -540,6 +540,26 @@ html, body {
 
 .selected-tune-item .tune-name { flex: 1; }
 
+.tune-order-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.btn-move-up, .btn-move-down {
+  background: none;
+  border: none;
+  color: var(--green);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1.2;
+  touch-action: manipulation;
+}
+
+.btn-move-up:disabled, .btn-move-down:disabled { color: var(--border); cursor: default; }
+.btn-move-up:not(:disabled):hover, .btn-move-down:not(:disabled):hover { color: var(--green-dark); }
+
 .selected-tune-item .btn-remove-tune {
   background: none;
   border: none;
