@@ -622,6 +622,31 @@ html, body {
 .form-hint { font-size: 0.8rem; color: var(--text-light); font-weight: normal; }
 .optional { font-size: 0.78rem; color: var(--text-light); font-weight: normal; }
 
+.checkbox-group {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 8px;
+  background: var(--white);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: var(--text);
+  font-weight: normal;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+}
+
+.checkbox-item:hover { background: var(--green-light); }
+.checkbox-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--green); cursor: pointer; }
+
 .form-actions {
   display: flex;
   flex-direction: column;

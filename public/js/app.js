@@ -441,7 +441,10 @@ function goToTuneForm(tune = null) {
     form.elements['where_learned'].value = tune.where_learned || '';
     form.elements['tunebooks'].value = tune.tunebooks || '';
     form.elements['mnemonic'].value = tune.mnemonic || '';
-    form.elements['instrument'].value = tune.instrument || '';
+    const savedInstruments = (tune.instrument || '').split(',').map(s => s.trim()).filter(Boolean);
+    document.querySelectorAll('#f-instrument input[type="checkbox"]').forEach(cb => {
+      cb.checked = savedInstruments.includes(cb.value);
+    });
     form.elements['sequence_id'].value = tune.sequence_id || '';
     form.elements['composer'].value = tune.composer || '';
     form.elements['count'].value = tune.count || '';
@@ -479,7 +482,7 @@ async function saveTuneForm(e) {
     where_learned: form.elements['where_learned'].value.trim(),
     tunebooks: form.elements['tunebooks'].value.trim(),
     mnemonic: form.elements['mnemonic'].value.trim(),
-    instrument: form.elements['instrument'].value,
+    instrument: Array.from(document.querySelectorAll('#f-instrument input:checked')).map(cb => cb.value).join(', '),
     sequence_id: form.elements['sequence_id'].value.trim(),
     composer: form.elements['composer'].value.trim(),
     count: form.elements['count'].value,
