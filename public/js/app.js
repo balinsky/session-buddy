@@ -695,10 +695,15 @@ function renderSelectedTunes() {
   container.querySelectorAll('.btn-move-up, .btn-move-down').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (btn.disabled) return;
       const idx = Number(btn.dataset.idx);
       const swapWith = btn.classList.contains('btn-move-up') ? idx - 1 : idx + 1;
-      [state.selectedTuneIds[idx], state.selectedTuneIds[swapWith]] =
-        [state.selectedTuneIds[swapWith], state.selectedTuneIds[idx]];
+      if (swapWith < 0 || swapWith >= state.selectedTuneIds.length) return;
+      const ids = [...state.selectedTuneIds];
+      const temp = ids[idx];
+      ids[idx] = ids[swapWith];
+      ids[swapWith] = temp;
+      state.selectedTuneIds = ids;
       renderSelectedTunes();
     });
   });
