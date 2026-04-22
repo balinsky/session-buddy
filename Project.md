@@ -31,7 +31,7 @@ Tunes are the primary entity. Each tune has the following fields:
 | Incipit B | Opening notes of the B part (optional) | Yes (if blank) |
 | Incipit C | Opening notes of the C part (optional) | Yes (if blank) |
 | Learning Status | Not Learned / Learning / Memorized | No |
-| Favorite | Whether the tune is a favorite (shown as ★) | No |
+| Favorite | Heart toggle on detail page; star (★) shown in list | No |
 | Mnemonic | A memory aid for the tune | No |
 | Who | Who the tune was learned from | No |
 | Notes | Free-form notes | No |
@@ -57,6 +57,13 @@ Tunes are the primary entity. Each tune has the following fields:
 
 ### Sets
 A set is an ordered grouping of 2–3 tunes. A tune can belong to multiple sets. Sets are displayed as slash-separated tune names: `Tune1 / Tune2 / Tune3`.
+
+Each set also has:
+
+| Field | Description |
+|---|---|
+| Favorite | Heart toggle on detail page; heart (♥) shown in list |
+| Last Practiced Date | Date last practiced — "Today" button updates the set AND all its tunes |
 
 ---
 
@@ -89,28 +96,73 @@ A set is an ordered grouping of 2–3 tunes. A tune can belong to multiple sets.
 ## Views
 
 ### Welcome / Sync Code View
-Shown on first load. User can start a new collection (generates a sync code) or enter an existing code to join a collection on another device.
+Shown on first load (no sync code stored). User can start a new collection (generates a sync code) or enter an existing code to access a collection on another device.
 
 ### Tunes View
-Lists all tunes grouped by learning status (Memorized → Learning → Not Learned), then alphabetically within each group. Each card shows the tune name, type/key, and a tappable status badge. Tapping the status badge cycles the status (Not Learned → Learning → Memorized → Not Learned) without opening the full detail. A search bar filters the list by name, type, or key.
+Lists all tunes. Tunes are grouped and sorted as follows:
+1. **Favorites** (all, sorted by status then name) — shown as a group at the top
+2. **Memorized** (non-favorites, alphabetical)
+3. **Learning** (non-favorites, alphabetical)
+4. **Not Learned** (non-favorites, alphabetical)
+
+Within each group, "The X" sorts as "X, The" but displays as "The X".
+
+Each card shows the tune name, type/key, and a tappable status badge. Tapping the badge cycles the status (Not Learned → Learning → Memorized → Not Learned) without opening the detail view.
+
+A search bar filters the list by name, type, or key. A **Filter** button opens a filter panel (turns green when a filter is active).
 
 ### Tune Detail View
-Shows all tune fields. "Show more" reveals hidden fields. Incipits render as sheet music. Has Edit and Delete buttons.
+Shows all tune fields. "Show more" reveals hidden fields. Incipits render as sheet music.
+
+- **Heart button** (♥) in the title area — tapping toggles the favorite, red when active
+- **Status control** — segmented button to change learning status
+- **"+ Add to Set"** button — opens the set builder with this tune pre-selected
+- **Edit** and **Delete** buttons
+- **Last Practiced** row with a **Today** button that sets the date to the current date
 
 ### Tune Form (Add / Edit)
-Full form for entering or editing a tune. Navigating away after saving goes to the refreshed Tunes list (for an edit) or the new tune's detail view (for a new tune).
+Full form for entering or editing a tune. After saving an edit, returns to the refreshed Tunes list. After creating a new tune, goes to the new tune's detail.
 
 ### Sets View
-Lists all sets as `Tune1 / Tune2 / Tune3`. Tapping a set opens its detail.
+Lists all sets. Favorites appear at the top (with a "Favorites" group header), then other sets. Each card shows the tune names and a heart (♥) indicator if favorited.
+
+A **Filter** button opens a filter panel (turns green when a filter is active).
 
 ### Set Detail View
-Shows each tune in the set with its name (tappable to open the full tune detail) and all present incipits rendered as sheet music. Intended for quick reference during practice or a live session.
+Shows each tune in the set with its name (tappable → opens full tune detail) and all present incipits rendered as sheet music. Intended for quick reference during practice or a live session.
+
+- **Heart button** (♥) in the title area — tapping toggles the favorite for the set
+- **Last Practiced** row with a **Today** button — updates the set's date AND updates every tune in the set to the same date
+- **Edit Set** and **Delete** buttons
 
 ### Set Form (Build / Edit a Set)
-Allows building or editing a set by selecting 2–3 tunes. The selected tunes are shown at the top with up/down buttons to reorder them. The Save button appears just above the search box (not at the bottom of the page). Navigating away after saving goes to the refreshed Sets list (for an edit) or the new set's detail view (for a new set).
+Allows building or editing a set by selecting 2–3 tunes from the library. Layout (top to bottom):
+1. **Selected tunes** — shows chosen tunes with up/down reorder buttons and a remove button
+2. **Save Set** and **Cancel** buttons (near the top, above the search box, for easy access)
+3. **Search box** — filters the tune picker
+4. **Tune picker** — tap a tune to add it; already-selected tunes are greyed out
+
+After saving an edit, returns to the refreshed Sets list. After creating a new set, goes to the new set's detail.
 
 ### CSV Import View
 Upload a CSV to bulk-import tunes. New tunes are added to the existing collection.
+
+### Filter Panel (Tunes)
+A bottom-sheet modal with the following criteria (any combination):
+- Favorites only
+- Learning Status (multi-select: Memorized, Learning, Not Learned)
+- Tune Type (multi-select, all 21 types)
+- Key (text, substring match)
+- Instrument (multi-select, all 8 instrument options)
+- Where Learned (text, substring match)
+- Last Practiced within the last N days
+
+**Apply** runs the filter; **Clear All** resets it. The Filter button in the toolbar turns green when a filter is active.
+
+### Filter Panel (Sets)
+A bottom-sheet modal with:
+- Favorites only
+- Contains Tune Type (multi-select — shows sets that contain at least one tune of the selected type)
 
 ---
 
@@ -149,6 +201,14 @@ Column names are matched case-insensitively.
 
 ### Manual Entry
 Individual tunes and sets can be added or edited through the app UI.
+
+---
+
+## Navigation
+
+The Tunes / Sets tab bar at the bottom is **always visible** on every screen except the welcome screen. The active tab is highlighted based on which section you are in (tunes, tune detail, tune form, and import all highlight the Tunes tab; sets, set detail, and set form highlight the Sets tab).
+
+A back arrow (←) appears in the header on all detail and form views.
 
 ---
 
