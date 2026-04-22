@@ -495,17 +495,14 @@ async function saveTuneForm(e) {
   if (!data.name) { showError('Tune name is required.'); return; }
 
   try {
-    let tune;
     if (state.editingTune) {
-      tune = await API.updateTune(state.editingTune.id, data);
+      await API.updateTune(state.editingTune.id, data);
+      await goToTunes();
     } else {
-      tune = await API.createTune(data);
+      const tune = await API.createTune(data);
+      state.tunes = await API.getTunes();
+      await goToTuneDetail(tune.id);
     }
-    // Go to the saved tune's detail view
-    state.tunes = await API.getTunes();
-    renderTuneDetail(tune);
-    showView('tune-detail');
-    document.getElementById('header-title').textContent = 'Tune Detail';
   } catch (e) {
     showError('Could not save tune: ' + e.message);
   }
@@ -761,10 +758,10 @@ async function saveSet() {
   try {
     if (state.editingSet) {
       await API.updateSet(state.editingSet.id, state.selectedTuneIds);
-      goToSetDetail(state.editingSet.id);
+      await goToSets();
     } else {
       const set = await API.createSet(state.selectedTuneIds);
-      goToSetDetail(set.id);
+      await goToSetDetail(set.id);
     }
   } catch (e) {
     showError('Could not save set: ' + e.message);
