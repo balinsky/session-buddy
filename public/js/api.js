@@ -41,11 +41,16 @@ const API = (() => {
       return request('POST', '/api/tunes/import', form, true);
     },
 
+    // Tunes (partial update)
+    patchTune: (id, data) => request('PATCH', `/api/tunes/${id}`, data),
+
     // Sets
     getSets: () => request('GET', '/api/sets'),
     getSet: (id) => request('GET', `/api/sets/${id}`),
     createSet: (tuneIds) => request('POST', '/api/sets', { tuneIds }),
     updateSet: (id, tuneIds) => request('PUT', `/api/sets/${id}`, { tuneIds }),
+    patchSet: (id, data) => request('PATCH', `/api/sets/${id}`, data),
+    practiceSet: (id, date) => request('POST', `/api/sets/${id}/practice`, { date }),
     deleteSet: (id) => request('DELETE', `/api/sets/${id}`),
   };
 })();

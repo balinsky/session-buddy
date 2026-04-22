@@ -14,6 +14,11 @@ const TUNE_TYPES = [
   '3/2 Tune', '7/8 Tune',
 ];
 
+const INSTRUMENTS = [
+  'Bb Whistle', 'C Whistle', 'Concertina', 'D Flute',
+  'D Generic', 'Fiddle', 'High D Whistle', 'Low F Whistle',
+];
+
 // Default ABC time signature for each tune type
 const METER_BY_TYPE = {
   'Reel': 'M:C', 'Hornpipe': 'M:C', 'Air': 'M:C',
@@ -39,12 +44,25 @@ function nextStatus(current) {
 // ===== STATE =====
 
 const state = {
-  tunes: [],           // cached tune list
-  editingTune: null,   // tune object being edited (null = new)
-  editingSet: null,    // set object being edited (null = new)
-  selectedTuneIds: [], // tune IDs chosen in set builder
-  backStack: [],       // navigation history for back button
-  tuneSearch: '',      // current search query on tunes view
+  tunes: [],
+  editingTune: null,
+  editingSet: null,
+  selectedTuneIds: [],
+  backStack: [],
+  tuneSearch: '',
+  tuneFilter: {
+    favoriteOnly: false,
+    statuses: [],
+    types: [],
+    key: '',
+    instruments: [],
+    where: '',
+    practicedDays: null,
+  },
+  setFilter: {
+    favoriteOnly: false,
+    types: [],
+  },
 };
 
 // ===== UTILITIES =====
@@ -113,33 +131,91 @@ function showError(msg) {
   alert(msg);
 }
 
+// ===== FILTER HELPERS =====
+
+function isTuneFilterActive() {
+  const f = state.tuneFilter;
+  return f.favoriteOnly || f.statuses.length > 0 || f.types.length > 0 ||
+    f.key !== '' || f.instruments.length > 0 || f.where !== '' || f.practicedDays !== null;
+}
+
+function isSetFilterActive() {
+  const f = state.setFilter;
+  return f.favoriteOnly || f.types.length > 0;
+}
+
+function applyTuneFilter(tunes) {
+  const f = state.tuneFilter;
+  return tunes.filter(t => {
+    if (f.favoriteOnly && !t.favorite) return false;
+    if (f.statuses.length && !f.statuses.includes(t.learning_status || 'Not Learned')) return false;
+    if (f.types.length && !f.types.includes(t.type)) return false;
+    if (f.key && !(t.key || '').toLowerCase().includes(f.key.toLowerCase())) return false;
+    if (f.instruments.length) {
+      const tuneInstr = (t.instrument || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (!f.instruments.some(i => tuneInstr.includes(i))) return false;
+    }
+    if (f.where && !(t.where_learned || '').toLowerCase().includes(f.where.toLowerCase())) return false;
+    if (f.practicedDays != null) {
+      if (!t.last_practiced_date) return false;
+      const daysAgo = (Date.now() - new Date(t.last_practiced_date).getTime()) / 86400000;
+      if (daysAgo > f.practicedDays) return false;
+    }
+    return true;
+  });
+}
+
+function applySetFilter(sets) {
+  const f = state.setFilter;
+  return sets.filter(s => {
+    if (f.favoriteOnly && !s.favorite) return false;
+    if (f.types.length) {
+      const setTypes = (s.tunes || []).map(t => t.type).filter(Boolean);
+      if (!f.types.some(type => setTypes.includes(type))) return false;
+    }
+    return true;
+  });
+}
+
+function updateFilterBtnStyle(btnId, isActive) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.classList.toggle('btn-filter-active', isActive);
+  btn.classList.toggle('btn-outline', !isActive);
+}
+
 // ===== VIEW MANAGEMENT =====
+
+// Maps any view to which nav tab should be highlighted
+const NAV_SECTION = {
+  tunes: 'tunes', 'tune-detail': 'tunes', 'tune-form': 'tunes', import: 'tunes',
+  sets: 'sets', 'set-detail': 'sets', 'set-form': 'sets',
+};
 
 function showView(viewId, pushToHistory = true) {
   document.querySelectorAll('.view.active').forEach(v => v.classList.remove('active'));
   document.getElementById('view-' + viewId).classList.add('active');
 
-  const showNav = ['tunes', 'sets'].includes(viewId);
-  document.getElementById('bottom-nav').classList.toggle('hidden', !showNav);
+  // Nav is always visible except on the welcome screen
+  document.getElementById('bottom-nav').classList.toggle('hidden', viewId === 'welcome');
 
   const showBack = viewId !== 'welcome' && viewId !== 'tunes' && viewId !== 'sets';
   document.getElementById('back-btn').classList.toggle('hidden', !showBack);
 
-  // Update active nav button
+  const activeSection = NAV_SECTION[viewId];
   document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.view === viewId);
+    btn.classList.toggle('active', btn.dataset.view === activeSection);
   });
 
   if (pushToHistory && viewId !== 'welcome') {
     state.backStack.push(viewId);
   }
 
-  // Scroll to top
   document.getElementById('main-content').scrollTop = 0;
 }
 
 function goBack() {
-  state.backStack.pop(); // remove current
+  state.backStack.pop();
   const prev = state.backStack[state.backStack.length - 1];
   if (prev) {
     showView(prev, false);
@@ -154,13 +230,11 @@ async function goToTunes() {
   state.backStack = ['tunes'];
   showView('tunes', false);
   document.getElementById('header-title').textContent = 'My Tunes';
-  document.getElementById('nav-tunes').classList.add('active');
-  document.getElementById('nav-sets').classList.remove('active');
 
   try {
     const tunes = await API.getTunes();
     state.tunes = tunes;
-    renderTuneList(tunes, '');
+    renderTuneList(tunes, state.tuneSearch);
   } catch (e) {
     showError('Could not load tunes: ' + e.message);
   }
@@ -172,12 +246,15 @@ function renderTuneList(tunes, searchQuery) {
 
   let filtered = tunes;
   if (query) {
-    filtered = tunes.filter(t =>
+    filtered = filtered.filter(t =>
       t.name.toLowerCase().includes(query) ||
       (t.type || '').toLowerCase().includes(query) ||
       (t.key || '').toLowerCase().includes(query)
     );
   }
+  filtered = applyTuneFilter(filtered);
+
+  updateFilterBtnStyle('btn-tune-filter', isTuneFilterActive());
 
   const sorted = sortTunes(filtered);
 
@@ -185,22 +262,28 @@ function renderTuneList(tunes, searchQuery) {
     container.innerHTML = `
       <div class="empty-list">
         <div class="empty-icon">&#119070;</div>
-        <p>${query ? 'No tunes match your search.' : 'No tunes yet. Add one or import a CSV!'}</p>
+        <p>${(query || isTuneFilterActive()) ? 'No tunes match.' : 'No tunes yet. Add one or import a CSV!'}</p>
       </div>`;
     return;
   }
 
-  // Group by learning status
-  const groups = [
-    { label: 'Memorized', key: 'Memorized', tunes: sorted.filter(t => t.learning_status === 'Memorized') },
-    { label: 'Learning', key: 'Learning', tunes: sorted.filter(t => t.learning_status === 'Learning') },
-    { label: 'Not Learned', key: 'Not Learned', tunes: sorted.filter(t => t.learning_status === 'Not Learned' || !t.learning_status) },
-  ].filter(g => g.tunes.length > 0);
+  // Favorites at the top, then non-favorites grouped by status
+  const favorites = sorted.filter(t => t.favorite);
+  const nonFavs   = sorted.filter(t => !t.favorite);
+
+  const groups = [];
+  if (favorites.length > 0) {
+    groups.push({ label: `Favorites (${favorites.length})`, tunes: favorites });
+  }
+  ['Memorized', 'Learning', 'Not Learned'].forEach(status => {
+    const g = nonFavs.filter(t => (t.learning_status || 'Not Learned') === status);
+    if (g.length > 0) groups.push({ label: `${status} (${g.length})`, tunes: g });
+  });
 
   let html = '';
   groups.forEach(group => {
     if (!query) {
-      html += `<div class="status-group-header">${esc(group.label)} (${group.tunes.length})</div>`;
+      html += `<div class="status-group-header">${esc(group.label)}</div>`;
     }
     group.tunes.forEach(tune => {
       const sc = statusClass(tune.learning_status);
@@ -221,7 +304,7 @@ function renderTuneList(tunes, searchQuery) {
 
   container.querySelectorAll('.list-card').forEach(card => {
     card.addEventListener('click', (e) => {
-      if (e.target.closest('.status-badge.tappable')) return; // handled separately
+      if (e.target.closest('.status-badge.tappable')) return;
       goToTuneDetail(Number(card.dataset.id));
     });
   });
@@ -235,7 +318,6 @@ function renderTuneList(tunes, searchQuery) {
       const tune = state.tunes.find(t => t.id === tuneId);
       if (!tune) return;
 
-      // Optimistic update
       badge.dataset.status = newStatus;
       const newSc = statusClass(newStatus);
       badge.className = `status-badge ${newSc} tappable`;
@@ -248,7 +330,7 @@ function renderTuneList(tunes, searchQuery) {
         renderTuneList(state.tunes, state.tuneSearch);
       } catch (err) {
         showError('Could not update status: ' + err.message);
-        renderTuneList(state.tunes, state.tuneSearch); // revert
+        renderTuneList(state.tunes, state.tuneSearch);
       }
     });
   });
@@ -269,13 +351,14 @@ async function goToTuneDetail(tuneId) {
 }
 
 function renderTuneDetail(tune) {
-  const sc = statusClass(tune.learning_status);
   const sessionUrl = buildSessionUrl(tune.thesession_id, tune.setting);
-  const fav = tune.favorite ? '<span class="favorite-icon" title="Favorite"> &#9733;</span>' : '';
 
   let html = `
     <div class="detail-header">
-      <div class="detail-title">${esc(tune.name)}${fav}</div>
+      <div class="detail-title-row">
+        <div class="detail-title">${esc(tune.name)}</div>
+        <button class="heart-btn ${tune.favorite ? 'is-favorite' : ''}" id="btn-favorite-tune" aria-label="Toggle favorite">&#9829;</button>
+      </div>
       <div class="detail-meta">
         ${tune.type ? `<span class="detail-meta-item">${esc(tune.type)}</span>` : ''}
         ${tune.key ? `<span class="detail-meta-item">&#9835; ${esc(tune.key)}</span>` : ''}
@@ -287,6 +370,7 @@ function renderTuneDetail(tune) {
         `).join('')}
       </div>
       <div class="detail-actions">
+        <button class="btn btn-outline btn-small" id="btn-add-to-set">+ Add to Set</button>
         <button class="btn btn-outline btn-small" id="btn-edit-tune">Edit</button>
         <button class="btn btn-danger btn-small" id="btn-delete-tune">Delete</button>
       </div>
@@ -339,7 +423,7 @@ function renderTuneDetail(tune) {
       </div>
     </div>`;
 
-  // Hidden fields (behind "Show more")
+  // Hidden fields
   const hiddenFields = [];
   if (tune.who) hiddenFields.push(['Learned from', esc(tune.who)]);
   if (tune.where_learned) hiddenFields.push(['Where', esc(tune.where_learned)]);
@@ -360,17 +444,31 @@ function renderTuneDetail(tune) {
   const container = document.getElementById('tune-detail-content');
   container.innerHTML = html;
 
-  // Render ABC notation after DOM update
   requestAnimationFrame(() => {
     ['a', 'b', 'c'].forEach(part => {
       const incipit = tune[`incipit_${part}`];
-      if (incipit) {
-        renderAbcInto(`notation-${tune.id}-${part}`, incipit, tune.type, tune.key);
-      }
+      if (incipit) renderAbcInto(`notation-${tune.id}-${part}`, incipit, tune.type, tune.key);
     });
   });
 
-  // Event handlers
+  // Favorite heart toggle
+  document.getElementById('btn-favorite-tune').addEventListener('click', async () => {
+    const newFav = tune.favorite ? 0 : 1;
+    try {
+      const updated = await API.patchTune(tune.id, { favorite: newFav });
+      tune.favorite = updated.favorite;
+      const btn = document.getElementById('btn-favorite-tune');
+      if (btn) btn.classList.toggle('is-favorite', !!updated.favorite);
+      const idx = state.tunes.findIndex(t => t.id === updated.id);
+      if (idx !== -1) state.tunes[idx] = updated;
+    } catch (e) {
+      showError('Could not update favorite: ' + e.message);
+    }
+  });
+
+  // Add to Set
+  document.getElementById('btn-add-to-set').addEventListener('click', () => goToSetForm(null, tune.id));
+
   document.getElementById('btn-edit-tune').addEventListener('click', () => goToTuneForm(tune));
   document.getElementById('btn-delete-tune').addEventListener('click', () => deleteTune(tune));
 
@@ -397,7 +495,6 @@ function renderTuneDetail(tune) {
       const updated = await API.updateTune(tune.id, { ...tune, last_practiced_date: today });
       document.getElementById('last-practiced-value').textContent = today;
       tune.last_practiced_date = today;
-      // Keep tunes cache current
       const idx = state.tunes.findIndex(t => t.id === updated.id);
       if (idx !== -1) state.tunes[idx] = updated;
     } catch (e) {
@@ -453,7 +550,6 @@ function goToTuneForm(tune = null) {
     form.elements['last_practiced_date'].value = tune.last_practiced_date || '';
     form.elements['notes'].value = tune.notes || '';
 
-    // Render incipit previews for existing values
     requestAnimationFrame(() => {
       ['a', 'b', 'c'].forEach(part => {
         const val = tune[`incipit_${part}`];
@@ -524,8 +620,6 @@ async function goToSets() {
   state.backStack = ['sets'];
   showView('sets', false);
   document.getElementById('header-title').textContent = 'My Sets';
-  document.getElementById('nav-sets').classList.add('active');
-  document.getElementById('nav-tunes').classList.remove('active');
 
   try {
     const sets = await API.getSets();
@@ -538,30 +632,47 @@ async function goToSets() {
 function renderSetList(sets) {
   const container = document.getElementById('set-list');
 
-  if (sets.length === 0) {
+  const filtered = applySetFilter(sets);
+  updateFilterBtnStyle('btn-set-filter', isSetFilterActive());
+
+  if (filtered.length === 0) {
     container.innerHTML = `
       <div class="empty-list">
         <div class="empty-icon">&#127925;</div>
-        <p>No sets yet. Tap "+ New Set" to build your first set!</p>
+        <p>${isSetFilterActive() ? 'No sets match the filter.' : 'No sets yet. Tap "+ New Set" to build your first set!'}</p>
       </div>`;
     return;
   }
 
+  // Favorites first
+  const favSets   = filtered.filter(s => s.favorite);
+  const otherSets = filtered.filter(s => !s.favorite);
+
   let html = '';
-  sets.forEach(set => {
-    const name = setDisplayName(set);
-    html += `
-      <div class="list-card" data-id="${set.id}" role="button" tabindex="0">
-        <div class="set-card-name">${esc(name)}</div>
-        <div class="set-card-count">${set.tunes.length} tune${set.tunes.length !== 1 ? 's' : ''}</div>
-      </div>`;
-  });
+  if (favSets.length > 0) {
+    html += `<div class="status-group-header">Favorites (${favSets.length})</div>`;
+    favSets.forEach(set => { html += renderSetCard(set); });
+  }
+  if (otherSets.length > 0) {
+    if (favSets.length > 0) html += `<div class="status-group-header">All Sets (${otherSets.length})</div>`;
+    otherSets.forEach(set => { html += renderSetCard(set); });
+  }
 
   container.innerHTML = html;
 
   container.querySelectorAll('.list-card').forEach(card => {
     card.addEventListener('click', () => goToSetDetail(Number(card.dataset.id)));
   });
+}
+
+function renderSetCard(set) {
+  const name = setDisplayName(set);
+  const favMark = set.favorite ? ' <span class="heart-indicator">&#9829;</span>' : '';
+  return `
+    <div class="list-card" data-id="${set.id}" role="button" tabindex="0">
+      <div class="set-card-name">${esc(name)}${favMark}</div>
+      <div class="set-card-count">${set.tunes.length} tune${set.tunes.length !== 1 ? 's' : ''}</div>
+    </div>`;
 }
 
 // ===== SET DETAIL VIEW =====
@@ -581,7 +692,10 @@ async function goToSetDetail(setId) {
 function renderSetDetail(set) {
   let html = `
     <div class="detail-header">
-      <div class="detail-title">${esc(setDisplayName(set))}</div>
+      <div class="detail-title-row">
+        <div class="detail-title">${esc(setDisplayName(set))}</div>
+        <button class="heart-btn ${set.favorite ? 'is-favorite' : ''}" id="btn-favorite-set" aria-label="Toggle favorite">&#9829;</button>
+      </div>
       <div class="detail-actions">
         <button class="btn btn-outline btn-small" id="btn-edit-set">Edit Set</button>
         <button class="btn btn-danger btn-small" id="btn-delete-set">Delete</button>
@@ -613,19 +727,54 @@ function renderSetDetail(set) {
     });
   }
 
+  // Practice card
+  html += `
+    <div class="detail-card">
+      <div class="detail-card-title">Practice</div>
+      <div class="detail-field">
+        <span class="detail-field-label">Last Practiced</span>
+        <span class="detail-field-value" id="set-practiced-value">${esc(set.last_practiced_date) || '<em>Not recorded</em>'}</span>
+        <button class="btn btn-small btn-primary" id="btn-set-today">Today</button>
+      </div>
+    </div>`;
+
   const container = document.getElementById('set-detail-content');
   container.innerHTML = html;
 
-  // Render ABC notation
   requestAnimationFrame(() => {
     set.tunes.forEach(tune => {
       ['a', 'b', 'c'].forEach(part => {
         const incipit = tune[`incipit_${part}`];
-        if (incipit) {
-          renderAbcInto(`set-notation-${tune.id}-${part}`, incipit, tune.type, tune.key);
-        }
+        if (incipit) renderAbcInto(`set-notation-${tune.id}-${part}`, incipit, tune.type, tune.key);
       });
     });
+  });
+
+  // Favorite heart toggle
+  document.getElementById('btn-favorite-set').addEventListener('click', async () => {
+    const newFav = set.favorite ? 0 : 1;
+    try {
+      const updated = await API.patchSet(set.id, { favorite: newFav });
+      set.favorite = updated.favorite;
+      const btn = document.getElementById('btn-favorite-set');
+      if (btn) btn.classList.toggle('is-favorite', !!updated.favorite);
+    } catch (e) {
+      showError('Could not update favorite: ' + e.message);
+    }
+  });
+
+  // Practice Today — updates set AND all its tunes
+  document.getElementById('btn-set-today').addEventListener('click', async () => {
+    const today = new Date().toISOString().split('T')[0];
+    try {
+      await API.practiceSet(set.id, today);
+      document.getElementById('set-practiced-value').textContent = today;
+      set.last_practiced_date = today;
+      // Refresh cached tunes so their practiced dates are current
+      state.tunes = await API.getTunes();
+    } catch (e) {
+      showError('Could not update: ' + e.message);
+    }
   });
 
   document.getElementById('btn-edit-set').addEventListener('click', () => goToSetForm(set));
@@ -638,13 +787,15 @@ function renderSetDetail(set) {
 
 // ===== SET FORM =====
 
-async function goToSetForm(set = null) {
+async function goToSetForm(set = null, preTuneId = null) {
   state.editingSet = set;
   state.selectedTuneIds = set ? set.tunes.map(t => t.id) : [];
+  if (preTuneId && !state.selectedTuneIds.includes(preTuneId)) {
+    state.selectedTuneIds.push(preTuneId);
+  }
   showView('set-form');
   document.getElementById('header-title').textContent = set ? 'Edit Set' : 'New Set';
 
-  // Load tunes for the picker
   try {
     if (state.tunes.length === 0) {
       state.tunes = await API.getTunes();
@@ -695,10 +846,15 @@ function renderSelectedTunes() {
   container.querySelectorAll('.btn-move-up, .btn-move-down').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      if (btn.disabled) return;
       const idx = Number(btn.dataset.idx);
       const swapWith = btn.classList.contains('btn-move-up') ? idx - 1 : idx + 1;
-      [state.selectedTuneIds[idx], state.selectedTuneIds[swapWith]] =
-        [state.selectedTuneIds[swapWith], state.selectedTuneIds[idx]];
+      if (swapWith < 0 || swapWith >= state.selectedTuneIds.length) return;
+      const ids = [...state.selectedTuneIds];
+      const temp = ids[idx];
+      ids[idx] = ids[swapWith];
+      ids[swapWith] = temp;
+      state.selectedTuneIds = ids;
       renderSelectedTunes();
     });
   });
@@ -802,6 +958,83 @@ function closeSyncModal() {
   document.getElementById('modal-sync').classList.add('hidden');
 }
 
+// ===== TUNE FILTER MODAL =====
+
+function openTuneFilter() {
+  const f = state.tuneFilter;
+  document.getElementById('ff-fav-only').checked = f.favoriteOnly;
+  document.querySelectorAll('.ff-status').forEach(cb => {
+    cb.checked = f.statuses.includes(cb.value);
+  });
+  document.querySelectorAll('.ff-type').forEach(cb => {
+    cb.checked = f.types.includes(cb.value);
+  });
+  document.getElementById('ff-key').value = f.key;
+  document.querySelectorAll('.ff-instrument').forEach(cb => {
+    cb.checked = f.instruments.includes(cb.value);
+  });
+  document.getElementById('ff-where').value = f.where;
+  document.getElementById('ff-days').value = f.practicedDays != null ? f.practicedDays : '';
+  document.getElementById('modal-tune-filter').classList.remove('hidden');
+}
+
+function closeTuneFilter() {
+  document.getElementById('modal-tune-filter').classList.add('hidden');
+}
+
+function applyTuneFilterFromModal() {
+  state.tuneFilter = {
+    favoriteOnly: document.getElementById('ff-fav-only').checked,
+    statuses: Array.from(document.querySelectorAll('.ff-status:checked')).map(cb => cb.value),
+    types: Array.from(document.querySelectorAll('.ff-type:checked')).map(cb => cb.value),
+    key: document.getElementById('ff-key').value.trim(),
+    instruments: Array.from(document.querySelectorAll('.ff-instrument:checked')).map(cb => cb.value),
+    where: document.getElementById('ff-where').value.trim(),
+    practicedDays: document.getElementById('ff-days').value ? Number(document.getElementById('ff-days').value) : null,
+  };
+  closeTuneFilter();
+  renderTuneList(state.tunes, state.tuneSearch);
+}
+
+function clearTuneFilter() {
+  state.tuneFilter = { favoriteOnly: false, statuses: [], types: [], key: '', instruments: [], where: '', practicedDays: null };
+  closeTuneFilter();
+  renderTuneList(state.tunes, state.tuneSearch);
+}
+
+// ===== SET FILTER MODAL =====
+
+function openSetFilter() {
+  const f = state.setFilter;
+  document.getElementById('sf-fav-only').checked = f.favoriteOnly;
+  document.querySelectorAll('.sf-type').forEach(cb => {
+    cb.checked = f.types.includes(cb.value);
+  });
+  document.getElementById('modal-set-filter').classList.remove('hidden');
+}
+
+function closeSetFilter() {
+  document.getElementById('modal-set-filter').classList.add('hidden');
+}
+
+async function applySetFilterFromModal() {
+  state.setFilter = {
+    favoriteOnly: document.getElementById('sf-fav-only').checked,
+    types: Array.from(document.querySelectorAll('.sf-type:checked')).map(cb => cb.value),
+  };
+  closeSetFilter();
+  // Re-render the sets view if we're on it, or just update button style
+  const sets = await API.getSets();
+  renderSetList(sets);
+}
+
+async function clearSetFilter() {
+  state.setFilter = { favoriteOnly: false, types: [] };
+  closeSetFilter();
+  const sets = await API.getSets();
+  renderSetList(sets);
+}
+
 // ===== INCIPIT LIVE PREVIEW IN FORM =====
 
 let previewDebounceTimer = null;
@@ -849,6 +1082,31 @@ async function handleJoinCode() {
 // ===== INITIALISATION =====
 
 function init() {
+  // Populate filter type checkboxes (tune filter and set filter)
+  const ffTypeGroup = document.getElementById('ff-type-group');
+  TUNE_TYPES.forEach(type => {
+    const label = document.createElement('label');
+    label.className = 'filter-check';
+    label.innerHTML = `<input type="checkbox" class="ff-type" value="${esc(type)}" /> ${esc(type)}`;
+    ffTypeGroup.appendChild(label);
+  });
+
+  const sfTypeGroup = document.getElementById('sf-type-group');
+  TUNE_TYPES.forEach(type => {
+    const label = document.createElement('label');
+    label.className = 'filter-check';
+    label.innerHTML = `<input type="checkbox" class="sf-type" value="${esc(type)}" /> ${esc(type)}`;
+    sfTypeGroup.appendChild(label);
+  });
+
+  const ffInstGroup = document.getElementById('ff-instrument-group');
+  INSTRUMENTS.forEach(inst => {
+    const label = document.createElement('label');
+    label.className = 'filter-check';
+    label.innerHTML = `<input type="checkbox" class="ff-instrument" value="${esc(inst)}" /> ${esc(inst)}`;
+    ffInstGroup.appendChild(label);
+  });
+
   // If a sync code is already stored, go straight to tunes
   if (localStorage.getItem('syncCode')) {
     goToTunes();
@@ -878,9 +1136,21 @@ function init() {
     renderTuneList(state.tunes, state.tuneSearch);
   });
 
-  // Add tune / import buttons
+  // Add tune / import
   document.getElementById('btn-add-tune').addEventListener('click', () => goToTuneForm(null));
   document.getElementById('btn-import').addEventListener('click', goToImport);
+
+  // Tune filter
+  document.getElementById('btn-tune-filter').addEventListener('click', openTuneFilter);
+  document.getElementById('btn-apply-tune-filter').addEventListener('click', applyTuneFilterFromModal);
+  document.getElementById('btn-clear-tune-filter').addEventListener('click', clearTuneFilter);
+  document.getElementById('modal-tune-filter').querySelector('.modal-backdrop').addEventListener('click', closeTuneFilter);
+
+  // Set filter
+  document.getElementById('btn-set-filter').addEventListener('click', openSetFilter);
+  document.getElementById('btn-apply-set-filter').addEventListener('click', applySetFilterFromModal);
+  document.getElementById('btn-clear-set-filter').addEventListener('click', clearSetFilter);
+  document.getElementById('modal-set-filter').querySelector('.modal-backdrop').addEventListener('click', closeSetFilter);
 
   // Tune form
   document.getElementById('tune-form').addEventListener('submit', saveTuneForm);
@@ -903,7 +1173,6 @@ function init() {
 
   // CSV import
   const csvInput = document.getElementById('csv-file-input');
-  const csvDropZone = document.getElementById('csv-drop-zone');
   const runImportBtn = document.getElementById('btn-run-import');
 
   csvInput.addEventListener('change', () => {

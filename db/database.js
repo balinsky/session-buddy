@@ -58,6 +58,8 @@ async function init() {
   // Add new columns to existing databases that predate these fields
   await pool.query(`ALTER TABLE tunes ADD COLUMN IF NOT EXISTS instrument TEXT`);
   await pool.query(`ALTER TABLE tunes ADD COLUMN IF NOT EXISTS sequence_id TEXT`);
+  await pool.query(`ALTER TABLE sets ADD COLUMN IF NOT EXISTS favorite INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE sets ADD COLUMN IF NOT EXISTS last_practiced_date TEXT`);
 }
 
 // --- Users ---
@@ -258,9 +260,60 @@ async function deleteSet(id, userId) {
   await pool.query('DELETE FROM sets WHERE id = $1 AND user_id = $2', [id, userId]);
 }
 
+async function patchSet(id, userId, data) {
+  const fields = [];
+  const values = [];
+  let idx = 1;
+  if (data.favorite !== undefined) {
+    fields.push(`favorite = $${idx++}`);
+    values.push(data.favorite ? 1 : 0);
+  }
+  if (data.last_practiced_date !== undefined) {
+    fields.push(`last_practiced_date = $${idx++}`);
+    values.push(data.last_practiced_date || null);
+  }
+  if (fields.length === 0) return getSetById(id, userId);
+  values.push(id, userId);
+  const { rows } = await pool.query(
+    `UPDATE sets SET ${fields.join(', ')} WHERE id = $${idx++} AND user_id = $${idx} RETURNING id`,
+    values
+  );
+  if (!rows[0]) return null;
+  return getSetById(id, userId);
+}
+
+async function practiceSet(id, userId, date) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      'UPDATE sets SET last_practiced_date = $1 WHERE id = $2 AND user_id = $3 RETURNING id',
+      [date, id, userId]
+    );
+    if (!rows[0]) { await client.query('ROLLBACK'); return null; }
+    const tuneRows = await client.query(
+      'SELECT tune_id FROM set_tunes WHERE set_id = $1', [id]
+    );
+    if (tuneRows.rows.length > 0) {
+      const tuneIds = tuneRows.rows.map(r => r.tune_id);
+      await client.query(
+        'UPDATE tunes SET last_practiced_date = $1 WHERE id = ANY($2) AND user_id = $3',
+        [date, tuneIds, userId]
+      );
+    }
+    await client.query('COMMIT');
+    return getSetById(id, userId);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   init,
   getUserBySyncCode, createUser,
   getTunesByUser, getTuneById, createTune, updateTune, deleteTune, insertManyTunes,
-  getSetsByUser, getSetById, createSet, updateSet, deleteSet,
+  getSetsByUser, getSetById, createSet, updateSet, deleteSet, patchSet, practiceSet,
 };

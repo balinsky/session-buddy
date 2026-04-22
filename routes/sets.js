@@ -62,6 +62,28 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+router.patch('/:id', async (req, res) => {
+  try {
+    const set = await db.patchSet(req.params.id, req.user.id, req.body);
+    if (!set) return res.status(404).json({ error: 'Set not found.' });
+    res.json(set);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/practice', async (req, res) => {
+  try {
+    const { date } = req.body;
+    if (!date) return res.status(400).json({ error: 'Date is required.' });
+    const set = await db.practiceSet(req.params.id, req.user.id, date);
+    if (!set) return res.status(404).json({ error: 'Set not found.' });
+    res.json(set);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete('/:id', async (req, res) => {
   try {
     await db.deleteSet(req.params.id, req.user.id);

@@ -44,6 +44,7 @@
         <div class="view-toolbar">
           <h2>My Tunes</h2>
           <div class="toolbar-actions">
+            <button id="btn-tune-filter" class="btn btn-small btn-outline">Filter</button>
             <button id="btn-import" class="btn btn-small btn-outline">Import CSV</button>
             <button id="btn-add-tune" class="btn btn-small btn-primary">+ Add</button>
           </div>
@@ -248,7 +249,10 @@
       <div id="view-sets" class="view">
         <div class="view-toolbar">
           <h2>My Sets</h2>
-          <button id="btn-add-set" class="btn btn-small btn-primary">+ New Set</button>
+          <div class="toolbar-actions">
+            <button id="btn-set-filter" class="btn btn-small btn-outline">Filter</button>
+            <button id="btn-add-set" class="btn btn-small btn-primary">+ New Set</button>
+          </div>
         </div>
         <div id="set-list" class="item-list"></div>
       </div>
@@ -297,6 +301,78 @@
           <strong>Expected columns:</strong> Name, Type, Key, Parts, Incipit A, Incipit B, Incipit C, Count, Added, Where, Who, Mnemonic, Tunebooks, Date Learned, Favorite, Thesession ID, Setting, Notes, Composer, Last Practiced Date, Instrument, Sequence ID
           <br/><br/>
           <strong>Learning status:</strong> Include a <code>Learned</code> column — <code>X</code> imports as Memorized, anything else imports as Not Learned. The "Learning" status is set manually in the app.
+        </div>
+      </div>
+
+      <!-- TUNE FILTER MODAL -->
+      <div id="modal-tune-filter" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card filter-panel">
+          <h3>Filter Tunes</h3>
+          <div class="filter-scroll">
+            <label class="filter-toggle-row">
+              <input type="checkbox" id="ff-fav-only" />
+              <span>Favorites only ♥</span>
+            </label>
+            <div class="filter-section">
+              <div class="filter-label">Status</div>
+              <div class="filter-check-group">
+                <label class="filter-check"><input type="checkbox" class="ff-status" value="Memorized" /> Memorized</label>
+                <label class="filter-check"><input type="checkbox" class="ff-status" value="Learning" /> Learning</label>
+                <label class="filter-check"><input type="checkbox" class="ff-status" value="Not Learned" /> Not Learned</label>
+              </div>
+            </div>
+            <div class="filter-section">
+              <div class="filter-label">Tune Type</div>
+              <div id="ff-type-group" class="filter-check-group filter-type-grid"></div>
+            </div>
+            <div class="filter-section">
+              <div class="filter-label">Key</div>
+              <input type="text" id="ff-key" class="filter-text-input" placeholder="e.g. D, G, Ador" autocorrect="off" autocapitalize="none" />
+            </div>
+            <div class="filter-section">
+              <div class="filter-label">Instrument</div>
+              <div id="ff-instrument-group" class="filter-check-group"></div>
+            </div>
+            <div class="filter-section">
+              <div class="filter-label">Where Learned</div>
+              <input type="text" id="ff-where" class="filter-text-input" placeholder="Search..." />
+            </div>
+            <div class="filter-section">
+              <div class="filter-label">Last Practiced</div>
+              <div class="filter-days-row">
+                <span>Within the last</span>
+                <input type="number" id="ff-days" class="filter-num-input" min="1" placeholder="—" />
+                <span>days</span>
+              </div>
+            </div>
+          </div>
+          <div class="filter-footer">
+            <button id="btn-apply-tune-filter" class="btn btn-primary">Apply</button>
+            <button id="btn-clear-tune-filter" class="btn btn-outline">Clear All</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SET FILTER MODAL -->
+      <div id="modal-set-filter" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card filter-panel">
+          <h3>Filter Sets</h3>
+          <div class="filter-scroll">
+            <label class="filter-toggle-row">
+              <input type="checkbox" id="sf-fav-only" />
+              <span>Favorites only ♥</span>
+            </label>
+            <div class="filter-section">
+              <div class="filter-label">Contains Tune Type</div>
+              <div id="sf-type-group" class="filter-check-group filter-type-grid"></div>
+            </div>
+          </div>
+          <div class="filter-footer">
+            <button id="btn-apply-set-filter" class="btn btn-primary">Apply</button>
+            <button id="btn-clear-set-filter" class="btn btn-outline">Clear All</button>
+          </div>
         </div>
       </div>
 

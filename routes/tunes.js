@@ -60,6 +60,17 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+router.patch('/:id', async (req, res) => {
+  try {
+    const existing = await db.getTuneById(req.params.id, req.user.id);
+    if (!existing) return res.status(404).json({ error: 'Tune not found.' });
+    const tune = await db.updateTune(req.params.id, req.user.id, { ...existing, ...req.body });
+    res.json(tune);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.delete('/:id', async (req, res) => {
   try {
     await db.deleteTune(req.params.id, req.user.id);
