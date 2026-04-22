@@ -756,6 +756,49 @@ html, body {
   margin-bottom: 8px;
 }
 
+/* ===== LIST CARD HEARTS & INCIPITS ===== */
+.tune-card-top, .set-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.tune-card-top .tune-card-name,
+.set-card-top .set-card-name { flex: 1; margin-bottom: 0; }
+
+.list-heart-btn {
+  background: none;
+  border: none;
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  color: #d8d8d8;
+  touch-action: manipulation;
+  flex-shrink: 0;
+  transition: color 0.15s, transform 0.1s;
+}
+
+.list-heart-btn.is-favorite { color: #e53935; }
+.list-heart-btn:active { transform: scale(1.25); }
+
+.tune-card-incipit, .set-card-incipit {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.78rem;
+  color: var(--text-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 3px 0 1px;
+}
+
+.set-card-type {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 1px;
+  font-style: italic;
+}
+
 /* ===== HEART FAVORITE BUTTON ===== */
 .detail-title-row {
   display: flex;
