@@ -458,6 +458,9 @@ html, body {
 .detail-field-value a { color: var(--green); text-decoration: none; }
 .detail-field-value a:hover { text-decoration: underline; }
 
+.field-value-split { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+.field-value-right { color: var(--text-muted); font-size: 0.85em; white-space: nowrap; padding-left: 8px; }
+
 .show-more-btn {
   display: block;
   width: 100%;

@@ -447,7 +447,7 @@ function renderTuneDetail(tune) {
   if (tune.composer) visibleFields.push(['Composer', esc(tune.composer)]);
   if (tune.notes) visibleFields.push(['Notes', esc(tune.notes)]);
   if (tune.tunebooks) visibleFields.push(['Tunebooks', esc(tune.tunebooks)]);
-  if (sessionUrl) visibleFields.push(['thesession.org', `<a href="${sessionUrl}" target="_blank" rel="noopener">View on thesession.org &#8599;</a>`]);
+  if (sessionUrl) visibleFields.push(['thesession.org', `<span class="field-value-split"><a href="${sessionUrl}" target="_blank" rel="noopener">View on thesession.org &#8599;</a><span class="field-value-right">${esc(tune.thesession_id)}</span></span>`]);
   if (tune.count) visibleFields.push(['Heard count', esc(tune.count)]);
 
   if (visibleFields.length > 0) {
@@ -475,7 +475,6 @@ function renderTuneDetail(tune) {
   if (tune.where_learned) hiddenFields.push(['Where', esc(tune.where_learned)]);
   if (tune.date_learned) hiddenFields.push(['Date Learned', esc(tune.date_learned)]);
   if (tune.added_date) hiddenFields.push(['Date Added', esc(tune.added_date)]);
-  if (tune.thesession_id) hiddenFields.push(['Thesession ID', esc(tune.thesession_id)]);
   if (tune.setting) hiddenFields.push(['Setting', esc(tune.setting)]);
 
   if (hiddenFields.length > 0) {
