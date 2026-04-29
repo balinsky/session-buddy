@@ -19,7 +19,15 @@ const API = (() => {
 
     if (res.status === 204) return null;
 
-    const data = await res.json();
+    // Read as text first so a non-JSON response (e.g. an HTML error page) shows
+    // its actual content rather than a cryptic JSON parse failure message.
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Server returned unexpected response (HTTP ${res.status}): ${text.slice(0, 400)}`);
+    }
     if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
     return data;
   }

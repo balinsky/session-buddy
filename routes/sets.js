@@ -104,7 +104,11 @@ router.post('/import', upload.single('csv'), async (req, res) => {
   try {
     records = parse(req.file.buffer, { columns: true, skip_empty_lines: true, trim: true, bom: true });
   } catch (err) {
-    return res.status(400).json({ error: 'Could not parse CSV: ' + err.message });
+    const parts = ['Could not parse CSV: ' + err.message];
+    if (err.code) parts.push(`error code: ${err.code}`);
+    if (err.lines) parts.push(`line: ${err.lines}`);
+    if (err.field !== undefined) parts.push(`field: ${err.field}`);
+    return res.status(400).json({ error: parts.join(' — ') });
   }
 
   // Case-insensitive column lookup
