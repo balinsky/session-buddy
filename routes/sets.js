@@ -106,7 +106,14 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     return candidates[0];
   }
 
+  // Build a set of existing tune-id sequences for duplicate detection
+  const existingSets = await db.getSetsByUser(req.user.id);
+  const existingSignatures = new Set(
+    existingSets.map(s => s.tunes.map(t => t.id).join(','))
+  );
+
   let imported = 0;
+  let duplicates = 0;
   const errorRows = [];
 
   for (const row of records) {
@@ -141,9 +148,12 @@ router.post('/import', upload.single('csv'), async (req, res) => {
         'Tune 5': col(row, 'Tune 5'),
         'Errors': errors.join('; '),
       });
+    } else if (existingSignatures.has(tuneIds.join(','))) {
+      duplicates++;
     } else {
       try {
         await db.createSet(req.user.id, tuneIds);
+        existingSignatures.add(tuneIds.join(','));
         imported++;
       } catch (err) {
         errorRows.push({
@@ -158,7 +168,7 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     }
   }
 
-  res.json({ imported, errorRows });
+  res.json({ imported, duplicates, errorRows });
 });
 
 router.put('/:id', async (req, res) => {

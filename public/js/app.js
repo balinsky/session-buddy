@@ -1286,18 +1286,16 @@ function init() {
     try {
       const result = await API.importSetsCsv(file);
       const n = result.imported;
+      const d = result.duplicates || 0;
       const e = result.errorRows.length;
-      if (e === 0) {
-        statusEl.textContent = `Successfully imported ${n} set${n !== 1 ? 's' : ''}!`;
-        statusEl.className = 'import-status success';
-      } else if (n > 0) {
-        statusEl.textContent = `Imported ${n} set${n !== 1 ? 's' : ''}. ${e} row${e !== 1 ? 's' : ''} had errors.`;
-        statusEl.className = 'import-status success';
-      } else {
-        statusEl.textContent = `No sets imported. ${e} row${e !== 1 ? 's' : ''} had errors.`;
-        statusEl.className = 'import-status error';
-        runSetImportBtn.disabled = false;
-      }
+      const parts = [];
+      if (n > 0) parts.push(`${n} set${n !== 1 ? 's' : ''} imported`);
+      if (d > 0) parts.push(`${d} duplicate${d !== 1 ? 's' : ''} skipped`);
+      if (e > 0) parts.push(`${e} row${e !== 1 ? 's' : ''} had errors`);
+      if (parts.length === 0) parts.push('No sets found in CSV');
+      statusEl.textContent = parts.join(', ') + '.';
+      statusEl.className = n > 0 ? 'import-status success' : 'import-status error';
+      if (n === 0 && e > 0) runSetImportBtn.disabled = false;
       if (e > 0) {
         const errSection = document.getElementById('set-import-error-section');
         errSection.classList.remove('hidden');
