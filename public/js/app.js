@@ -736,7 +736,7 @@ function renderSetCard(set) {
   const name = setDisplayName(set);
   const isFav = set.favorite ? 'is-favorite' : '';
   const typeLabel = setTypeLabel(set);
-  const firstIncipit = set.tunes && set.tunes[0] ? (set.tunes[0].incipit_a || '') : '';
+  const incipits = (set.tunes || []).map(t => t.incipit_a).filter(Boolean);
 
   return `
     <div class="list-card" data-id="${set.id}" role="button" tabindex="0">
@@ -745,7 +745,7 @@ function renderSetCard(set) {
         <button class="list-heart-btn ${isFav}" data-id="${set.id}" aria-label="Toggle favorite">&#9829;</button>
       </div>
       ${typeLabel ? `<div class="set-card-type">${esc(typeLabel)}</div>` : ''}
-      ${firstIncipit ? `<div class="set-card-incipit">${esc(firstIncipit)}</div>` : ''}
+      ${incipits.map(inc => `<div class="set-card-incipit">${esc(inc)}</div>`).join('')}
     </div>`;
 }
 
@@ -780,7 +780,7 @@ function renderSetDetail(set) {
     html += `<p class="hint">This set has no tunes.</p>`;
   } else {
     set.tunes.forEach((tune, idx) => {
-      const incipitParts = ['a', 'b', 'c']
+      const incipitParts = ['a']
         .filter(p => tune[`incipit_${p}`])
         .map(p => ({ part: p, incipit: tune[`incipit_${p}`] }));
 
@@ -791,7 +791,6 @@ function renderSetDetail(set) {
       incipitParts.forEach(({ part, incipit }) => {
         html += `
           <div class="incipit-block">
-            <div class="incipit-label">Part ${part.toUpperCase()}</div>
             <div class="incipit-abc-text">${esc(incipit)}</div>
             <div class="incipit-notation" id="set-notation-${tune.id}-${part}"></div>
           </div>`;
@@ -817,10 +816,7 @@ function renderSetDetail(set) {
 
   requestAnimationFrame(() => {
     set.tunes.forEach(tune => {
-      ['a', 'b', 'c'].forEach(part => {
-        const incipit = tune[`incipit_${part}`];
-        if (incipit) renderAbcInto(`set-notation-${tune.id}-${part}`, incipit, tune.type, tune.key);
-      });
+      if (tune.incipit_a) renderAbcInto(`set-notation-${tune.id}-a`, tune.incipit_a, tune.type, tune.key);
     });
   });
 

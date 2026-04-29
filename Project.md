@@ -7,8 +7,8 @@ A mobile-friendly Node.js web app for tracking Irish traditional music tunes and
 ## Tech Stack
 
 - **Runtime:** Node.js + Express
-- **Database:** PostgreSQL (hosted on [Neon](https://neon.tech))
-- **Deployment:** [Render](https://render.com)
+- **Database:** PostgreSQL (hosted on [Railway](https://railway.app) or [Neon](https://neon.tech))
+- **Deployment:** [Railway](https://railway.app)
 - **Music notation rendering:** [abcjs](https://www.abcjs.net/) (loaded from CDN)
 - **CSV parsing:** csv-parse
 - **File uploads:** multer
@@ -31,23 +31,23 @@ Tunes are the primary entity. Each tune has the following fields:
 | Incipit B | Opening notes of the B part (optional) | Yes (if blank) |
 | Incipit C | Opening notes of the C part (optional) | Yes (if blank) |
 | Learning Status | Not Learned / Learning / Memorized | No |
-| Favorite | Heart toggle on detail page; star (★) shown in list | No |
+| Favorite | Heart toggle on detail page; red heart (♥) shown in list | No |
 | Mnemonic | A memory aid for the tune | No |
 | Who | Who the tune was learned from | No |
 | Notes | Free-form notes | No |
 | Composer | Composer of the tune | No |
 | Tunebooks | Books the tune appears in | No |
 | Instrument | Which instruments the tune is playable on (multiple allowed) | No |
-| Sequence ID | ID grouping tunes from the same workshop/sequence (e.g. WK-2024-03) | No |
+| Sequence ID | ID grouping tunes from the same workshop/sequence (e.g. DW1-3) | No |
 | Last Practiced Date | Date last practiced — has a "Today" button to set to current date | No |
 | Count | Number of times heard | No |
 | Added Date | Date added to the list | Yes |
 | Where | Where the tune was learned | Yes |
 | Date Learned | When the tune was learned | Yes |
-| Thesession ID | Tune ID on thesession.org | Yes |
+| Thesession ID | Tune ID on thesession.org | Yes (shown inline with link) |
 | Setting | Setting number on thesession.org | Yes |
 
-**Thesession.org link** is built from Tune ID and Setting:
+**Thesession.org link** is shown in the Details card. The Thesession ID is displayed right-justified on the same row as the link. The URL is built from Tune ID and Setting:
 - No setting: `https://thesession.org/tunes/{id}`
 - With setting: `https://thesession.org/tunes/{id}#{setting}`
 
@@ -56,7 +56,7 @@ Tunes are the primary entity. Each tune has the following fields:
 **Instrument** values are stored as a comma-separated string. The UI presents them as a checkbox grid with these options: Bb Whistle, C Whistle, Concertina, D Flute, D Generic, Fiddle, High D Whistle, Low F Whistle.
 
 ### Sets
-A set is an ordered grouping of 2–3 tunes. A tune can belong to multiple sets. Sets are displayed as slash-separated tune names: `Tune1 / Tune2 / Tune3`.
+A set is an ordered grouping of 1–8 tunes. A tune can belong to multiple sets. Sets are displayed as slash-separated tune names: `Tune1 / Tune2 / Tune3`.
 
 Each set also has:
 
@@ -107,9 +107,9 @@ Lists all tunes. Tunes are grouped and sorted as follows:
 
 Within each group, "The X" sorts as "X, The" but displays as "The X".
 
-Each card shows the tune name, type/key, and a tappable status badge. Tapping the badge cycles the status (Not Learned → Learning → Memorized → Not Learned) without opening the detail view.
+Each card shows the tune name, type/key, a tappable status badge, and the A incipit rendered as a single line of sheet music. Tapping the status badge cycles the status (Not Learned → Learning → Memorized → Not Learned) without opening the detail view. Favorite tunes show a red heart (♥); tapping it toggles the favorite.
 
-A search bar filters the list by name, type, or key. A **Filter** button opens a filter panel (turns green when a filter is active).
+A search bar filters the list by name, type, key, Thesession ID, or Sequence ID. A **Filter** button opens a filter panel (turns green when a filter is active).
 
 ### Tune Detail View
 Shows all tune fields. "Show more" reveals hidden fields. Incipits render as sheet music.
@@ -119,33 +119,37 @@ Shows all tune fields. "Show more" reveals hidden fields. Incipits render as she
 - **"+ Add to Set"** button — opens the set builder with this tune pre-selected
 - **Edit** and **Delete** buttons
 - **Last Practiced** row with a **Today** button that sets the date to the current date
+- **thesession.org** row shows the link on the left and the Thesession ID right-justified on the same line
 
 ### Tune Form (Add / Edit)
 Full form for entering or editing a tune. After saving an edit, returns to the refreshed Tunes list. After creating a new tune, goes to the new tune's detail.
 
 ### Sets View
-Lists all sets. Favorites appear at the top (with a "Favorites" group header), then other sets. Each card shows the tune names and a heart (♥) indicator if favorited.
+Lists all sets. Favorites appear at the top (with a "Favorites" group header), then non-favorite sets under a "Sets" group header. Each card shows the tune names, the tune type (pluralized, e.g. "Jigs"; "Mixed" if more than one type), a red heart (♥) if favorited, and the A incipit of each tune (one line per tune, if the tune has an A incipit).
 
 A **Filter** button opens a filter panel (turns green when a filter is active).
 
 ### Set Detail View
-Shows each tune in the set with its name (tappable → opens full tune detail) and all present incipits rendered as sheet music. Intended for quick reference during practice or a live session.
+Shows each tune in the set with its name (tappable → opens full tune detail) and the A incipit rendered as sheet music. Intended for quick reference during practice or a live session. Only the A incipit is shown; B and C incipits are omitted.
 
 - **Heart button** (♥) in the title area — tapping toggles the favorite for the set
 - **Last Practiced** row with a **Today** button — updates the set's date AND updates every tune in the set to the same date
 - **Edit Set** and **Delete** buttons
 
 ### Set Form (Build / Edit a Set)
-Allows building or editing a set by selecting 2–3 tunes from the library. Layout (top to bottom):
+Allows building or editing a set by selecting 1–8 tunes from the library. Layout (top to bottom):
 1. **Selected tunes** — shows chosen tunes with up/down reorder buttons and a remove button
 2. **Save Set** and **Cancel** buttons (near the top, above the search box, for easy access)
-3. **Search box** — filters the tune picker
+3. **Search box** — filters the tune picker by name, type, Thesession ID, or Sequence ID
 4. **Tune picker** — tap a tune to add it; already-selected tunes are greyed out
 
 After saving an edit, returns to the refreshed Sets list. After creating a new set, goes to the new set's detail.
 
-### CSV Import View
+### CSV Import View (Tunes)
 Upload a CSV to bulk-import tunes. New tunes are added to the existing collection.
+
+### CSV Import View (Sets)
+Upload a CSV to bulk-import sets. Each row creates one set. Columns are `Tune 1` through `Tune 5`; each value must be the Thesession ID of a tune already in the collection (optionally with `#setting`, e.g. `12345#2`). Blank columns are ignored. Rows where any tune cannot be matched are skipped and returned as a downloadable error CSV with a description of which tunes need to be added first.
 
 ### Filter Panel (Tunes)
 A bottom-sheet modal with the following criteria (any combination):
@@ -155,6 +159,7 @@ A bottom-sheet modal with the following criteria (any combination):
 - Key (text, substring match)
 - Instrument (multi-select, all 8 instrument options)
 - Where Learned (text, substring match)
+- Learned From (text, substring match)
 - Last Practiced within the last N days
 
 **Apply** runs the filter; **Clear All** resets it. The Filter button in the toolbar turns green when a filter is active.
@@ -168,7 +173,7 @@ A bottom-sheet modal with:
 
 ## Data Entry
 
-### CSV Import
+### CSV Import (Tunes)
 Column names are matched case-insensitively.
 
 | CSV Column | App Field |
@@ -199,6 +204,19 @@ Column names are matched case-insensitively.
 
 **Learning Status on import:** `X` in the `Learned` column imports as Memorized; anything else imports as Not Learned. The "Learning" status can only be set manually in the app.
 
+### CSV Import (Sets)
+Column names are matched case-insensitively.
+
+| CSV Column | Description |
+|---|---|
+| Tune 1 | Thesession ID of the first tune (e.g. `12345` or `12345#2`) |
+| Tune 2 | Thesession ID of the second tune (optional) |
+| Tune 3 | Thesession ID of the third tune (optional) |
+| Tune 4 | Thesession ID of the fourth tune (optional) |
+| Tune 5 | Thesession ID of the fifth tune (optional) |
+
+Each tune value is matched against tunes already in the collection by Thesession ID (and setting if `#setting` is appended). Rows with any unmatched tune are skipped; a downloadable error CSV is provided listing the problem rows and which tunes to add.
+
 ### Manual Entry
 Individual tunes and sets can be added or edited through the app UI.
 
@@ -206,7 +224,7 @@ Individual tunes and sets can be added or edited through the app UI.
 
 ## Navigation
 
-The Tunes / Sets tab bar at the bottom is **always visible** on every screen except the welcome screen. The active tab is highlighted based on which section you are in (tunes, tune detail, tune form, and import all highlight the Tunes tab; sets, set detail, and set form highlight the Sets tab).
+The Tunes / Sets tab bar at the bottom is **always visible** on every screen except the welcome screen. The active tab is highlighted based on which section you are in (tunes, tune detail, tune form, and tune CSV import all highlight the Tunes tab; sets, set detail, set form, and set CSV import all highlight the Sets tab).
 
 A back arrow (←) appears in the header on all detail and form views.
 
