@@ -278,6 +278,35 @@ html, body {
   flex-wrap: wrap;
 }
 
+.tune-card-count-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.tune-count-value {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 20px;
+  text-align: center;
+}
+
+.tune-count-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 1px 6px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tune-count-btn:active { background: var(--green-light); }
+
 .tune-card-type-key {
   font-size: 0.85rem;
   color: var(--text-muted);

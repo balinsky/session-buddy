@@ -320,6 +320,11 @@ function renderTuneList(tunes, searchQuery) {
           <div class="tune-card-meta">
             ${typKey ? `<span class="tune-card-type-key">${esc(typKey)}</span>` : ''}
             <span class="status-badge ${sc} tappable" data-id="${tune.id}" data-status="${tune.learning_status || 'Not Learned'}" title="Tap to change status">${esc(tune.learning_status || 'Not Learned')} ↻</span>
+            <span class="tune-card-count-row">
+              <button class="tune-count-btn tune-count-dec" data-id="${tune.id}" aria-label="Decrease count">−</button>
+              <span class="tune-count-value" data-id="${tune.id}">${tune.count || 0}</span>
+              <button class="tune-count-btn tune-count-inc" data-id="${tune.id}" aria-label="Increase count">+</button>
+            </span>
           </div>
         </div>`;
     });
@@ -331,6 +336,7 @@ function renderTuneList(tunes, searchQuery) {
     card.addEventListener('click', (e) => {
       if (e.target.closest('.status-badge.tappable')) return;
       if (e.target.closest('.list-heart-btn')) return;
+      if (e.target.closest('.tune-count-btn')) return;
       goToTuneDetail(Number(card.dataset.id));
     });
   });
@@ -377,6 +383,31 @@ function renderTuneList(tunes, searchQuery) {
       } catch (err) {
         showError('Could not update favorite: ' + err.message);
         renderTuneList(state.tunes, state.tuneSearch);
+      }
+    });
+  });
+
+  container.querySelectorAll('.tune-count-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const tuneId = Number(btn.dataset.id);
+      const tune = state.tunes.find(t => t.id === tuneId);
+      if (!tune) return;
+      const isInc = btn.classList.contains('tune-count-inc');
+      const current = tune.count || 0;
+      const newCount = isInc ? current + 1 : Math.max(0, current - 1);
+      if (newCount === current) return;
+
+      const display = container.querySelector(`.tune-count-value[data-id="${tuneId}"]`);
+      if (display) display.textContent = newCount;
+
+      try {
+        const updated = await API.patchTune(tuneId, { count: newCount });
+        const idx = state.tunes.findIndex(t => t.id === tuneId);
+        if (idx !== -1) state.tunes[idx] = updated;
+      } catch (err) {
+        showError('Could not update count: ' + err.message);
+        if (display) display.textContent = current;
       }
     });
   });
