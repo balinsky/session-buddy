@@ -416,6 +416,7 @@ function renderTuneDetail(tune) {
         `).join('')}
       </div>
       <div class="detail-actions">
+        <button class="btn btn-primary btn-small" id="btn-add-tune-from-detail">+ Add Tune</button>
         <button class="btn btn-outline btn-small" id="btn-add-to-set">+ Add to Set</button>
         <button class="btn btn-outline btn-small" id="btn-edit-tune">Edit</button>
         <button class="btn btn-danger btn-small" id="btn-delete-tune">Delete</button>
@@ -511,7 +512,8 @@ function renderTuneDetail(tune) {
     }
   });
 
-  // Add to Set
+  // Add Tune / Add to Set
+  document.getElementById('btn-add-tune-from-detail').addEventListener('click', () => goToTuneForm(null));
   document.getElementById('btn-add-to-set').addEventListener('click', () => goToSetForm(null, tune.id));
   document.getElementById('btn-edit-tune').addEventListener('click', () => goToTuneForm(tune));
   document.getElementById('btn-delete-tune').addEventListener('click', () => deleteTune(tune));
@@ -771,6 +773,7 @@ function renderSetDetail(set) {
         <button class="heart-btn ${set.favorite ? 'is-favorite' : ''}" id="btn-favorite-set" aria-label="Toggle favorite">&#9829;</button>
       </div>
       <div class="detail-actions">
+        <button class="btn btn-primary btn-small" id="btn-new-set-from-detail">+ New Set</button>
         <button class="btn btn-outline btn-small" id="btn-edit-set">Edit Set</button>
         <button class="btn btn-danger btn-small" id="btn-delete-set">Delete</button>
       </div>
@@ -847,6 +850,7 @@ function renderSetDetail(set) {
     }
   });
 
+  document.getElementById('btn-new-set-from-detail').addEventListener('click', () => goToSetForm(null));
   document.getElementById('btn-edit-set').addEventListener('click', () => goToSetForm(set));
   document.getElementById('btn-delete-set').addEventListener('click', () => deleteSet(set));
 
