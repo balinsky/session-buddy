@@ -109,13 +109,14 @@ Within each group, "The X" sorts as "X, The" but displays as "The X".
 
 Each card shows the tune name, type/key, a tappable status badge, and the A incipit rendered as a single line of sheet music. Tapping the status badge cycles the status (Not Learned → Learning → Memorized → Not Learned) without opening the detail view. Favorite tunes show a red heart (♥); tapping it toggles the favorite.
 
-A search bar filters the list by name, type, key, Thesession ID, or Sequence ID. A **Filter** button opens a filter panel (turns green when a filter is active).
+A search bar filters the list by name, type, key, Thesession ID, or Sequence ID. A **Filter** button opens a filter panel (turns green when a filter is active). A **+ Add Tune** button opens a blank tune form.
 
 ### Tune Detail View
 Shows all tune fields. "Show more" reveals hidden fields. Incipits render as sheet music.
 
 - **Heart button** (♥) in the title area — tapping toggles the favorite, red when active
 - **Status control** — segmented button to change learning status
+- **"+ Add Tune"** button — opens a blank tune form
 - **"+ Add to Set"** button — opens the set builder with this tune pre-selected
 - **Edit** and **Delete** buttons
 - **Last Practiced** row with a **Today** button that sets the date to the current date
@@ -134,6 +135,7 @@ Shows each tune in the set with its name (tappable → opens full tune detail) a
 
 - **Heart button** (♥) in the title area — tapping toggles the favorite for the set
 - **Last Practiced** row with a **Today** button — updates the set's date AND updates every tune in the set to the same date
+- **"+ New Set"** button — opens a blank set builder
 - **Edit Set** and **Delete** buttons
 
 ### Set Form (Build / Edit a Set)
@@ -149,7 +151,7 @@ After saving an edit, returns to the refreshed Sets list. After creating a new s
 Upload a CSV to bulk-import tunes. New tunes are added to the existing collection.
 
 ### CSV Import View (Sets)
-Upload a CSV to bulk-import sets. Each row creates one set. Columns are `Tune 1` through `Tune 5`; each value must be the Thesession ID of a tune already in the collection (optionally with `#setting`, e.g. `12345#2`). Blank columns are ignored. Rows where any tune cannot be matched are skipped and returned as a downloadable error CSV with a description of which tunes need to be added first.
+Upload a CSV to bulk-import sets. Each row creates one set. Columns are `Tune 1` through `Tune 5`; each value must be the Thesession ID of a tune already in the collection (optionally with `#setting`, e.g. `12345#setting2`). Blank columns are ignored. Rows where any tune cannot be matched are skipped and returned as a downloadable error CSV with a description of which tunes need to be added first.
 
 ### Filter Panel (Tunes)
 A bottom-sheet modal with the following criteria (any combination):
