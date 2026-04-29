@@ -52,51 +52,6 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
-  try {
-    const { tuneIds } = req.body;
-    if (!Array.isArray(tuneIds) || tuneIds.length < 1) {
-      return res.status(400).json({ error: 'At least one tune is required.' });
-    }
-    const set = await db.updateSet(req.params.id, req.user.id, tuneIds);
-    if (!set) return res.status(404).json({ error: 'Set not found.' });
-    res.json(set);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.patch('/:id', async (req, res) => {
-  try {
-    const set = await db.patchSet(req.params.id, req.user.id, req.body);
-    if (!set) return res.status(404).json({ error: 'Set not found.' });
-    res.json(set);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/:id/practice', async (req, res) => {
-  try {
-    const { date } = req.body;
-    if (!date) return res.status(400).json({ error: 'Date is required.' });
-    const set = await db.practiceSet(req.params.id, req.user.id, date);
-    if (!set) return res.status(404).json({ error: 'Set not found.' });
-    res.json(set);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.delete('/:id', async (req, res) => {
-  try {
-    await db.deleteSet(req.params.id, req.user.id);
-    res.status(204).send();
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 router.post('/import', upload.single('csv'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'CSV file is required.' });
 
@@ -198,6 +153,51 @@ router.post('/import', upload.single('csv'), async (req, res) => {
   }
 
   res.json({ imported, errorRows });
+});
+
+router.put('/:id', async (req, res) => {
+  try {
+    const { tuneIds } = req.body;
+    if (!Array.isArray(tuneIds) || tuneIds.length < 1) {
+      return res.status(400).json({ error: 'At least one tune is required.' });
+    }
+    const set = await db.updateSet(req.params.id, req.user.id, tuneIds);
+    if (!set) return res.status(404).json({ error: 'Set not found.' });
+    res.json(set);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/:id', async (req, res) => {
+  try {
+    const set = await db.patchSet(req.params.id, req.user.id, req.body);
+    if (!set) return res.status(404).json({ error: 'Set not found.' });
+    res.json(set);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/practice', async (req, res) => {
+  try {
+    const { date } = req.body;
+    if (!date) return res.status(400).json({ error: 'Date is required.' });
+    const set = await db.practiceSet(req.params.id, req.user.id, date);
+    if (!set) return res.status(404).json({ error: 'Set not found.' });
+    res.json(set);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  try {
+    await db.deleteSet(req.params.id, req.user.id);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
