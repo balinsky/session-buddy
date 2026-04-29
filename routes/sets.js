@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const { parse } = require('csv-parse/sync');
 const db = require('../db/database');
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 async function requireUser(req, res, next) {
   try {
@@ -91,6 +95,105 @@ router.delete('/:id', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+router.post('/import', upload.single('csv'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'CSV file is required.' });
+
+  let records;
+  try {
+    records = parse(req.file.buffer, { columns: true, skip_empty_lines: true, trim: true, bom: true });
+  } catch (err) {
+    return res.status(400).json({ error: 'Could not parse CSV: ' + err.message });
+  }
+
+  // Case-insensitive column lookup
+  function col(row, name) {
+    if (row[name] !== undefined) return (row[name] || '').trim();
+    const key = Object.keys(row).find(k => k.toLowerCase() === name.toLowerCase());
+    return key ? (row[key] || '').trim() : '';
+  }
+
+  // Index user's tunes by thesession_id for fast lookup
+  let allTunes;
+  try {
+    allTunes = await db.getTunesByUser(req.user.id);
+  } catch (err) {
+    return res.status(500).json({ error: 'Could not load tunes: ' + err.message });
+  }
+
+  const bySessionId = {};
+  for (const tune of allTunes) {
+    if (tune.thesession_id) {
+      const key = String(tune.thesession_id).trim();
+      if (!bySessionId[key]) bySessionId[key] = [];
+      bySessionId[key].push(tune);
+    }
+  }
+
+  function findTune(ref) {
+    const [idPart, settingPart] = ref.split('#');
+    const id = idPart.trim();
+    const setting = settingPart ? settingPart.trim() : null;
+    const candidates = bySessionId[id] || [];
+    if (candidates.length === 0) return null;
+    if (setting) return candidates.find(t => String(t.setting || '').trim() === setting) || null;
+    return candidates[0];
+  }
+
+  let imported = 0;
+  const errorRows = [];
+
+  for (const row of records) {
+    const refs = [];
+    for (let i = 1; i <= 5; i++) {
+      const val = col(row, `Tune ${i}`);
+      if (val) refs.push({ field: `Tune ${i}`, ref: val });
+    }
+    if (refs.length === 0) continue;
+
+    const tuneIds = [];
+    const errors = [];
+
+    for (const { field, ref } of refs) {
+      const tune = findTune(ref);
+      if (tune) {
+        tuneIds.push(tune.id);
+      } else {
+        const [idPart, settingPart] = ref.split('#');
+        let msg = `${field} (${ref}) not found — add this tune with Thesession ID ${idPart.trim()}`;
+        if (settingPart) msg += `, Setting ${settingPart.trim()}`;
+        errors.push(msg);
+      }
+    }
+
+    if (errors.length > 0) {
+      errorRows.push({
+        'Tune 1': col(row, 'Tune 1'),
+        'Tune 2': col(row, 'Tune 2'),
+        'Tune 3': col(row, 'Tune 3'),
+        'Tune 4': col(row, 'Tune 4'),
+        'Tune 5': col(row, 'Tune 5'),
+        'Errors': errors.join('; '),
+      });
+    } else {
+      try {
+        await db.createSet(req.user.id, tuneIds);
+        imported++;
+      } catch (err) {
+        errorRows.push({
+          'Tune 1': col(row, 'Tune 1'),
+          'Tune 2': col(row, 'Tune 2'),
+          'Tune 3': col(row, 'Tune 3'),
+          'Tune 4': col(row, 'Tune 4'),
+          'Tune 5': col(row, 'Tune 5'),
+          'Errors': 'Database error: ' + err.message,
+        });
+      }
+    }
+  }
+
+  res.json({ imported, errorRows });
 });
 
 module.exports = router;

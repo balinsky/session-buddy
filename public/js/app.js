@@ -205,7 +205,7 @@ function updateFilterBtnStyle(btnId, isActive) {
 // Maps any view to which nav tab should be highlighted
 const NAV_SECTION = {
   tunes: 'tunes', 'tune-detail': 'tunes', 'tune-form': 'tunes', import: 'tunes',
-  sets: 'sets', 'set-detail': 'sets', 'set-form': 'sets',
+  sets: 'sets', 'set-detail': 'sets', 'set-form': 'sets', 'set-import': 'sets',
 };
 
 function showView(viewId, pushToHistory = true) {
@@ -1012,6 +1012,32 @@ async function deleteSet(set) {
 
 // ===== CSV IMPORT VIEW =====
 
+function goToSetImport() {
+  showView('set-import');
+  document.getElementById('header-title').textContent = 'Import Sets CSV';
+  document.getElementById('set-import-status').textContent = '';
+  document.getElementById('set-import-status').className = 'import-status';
+  document.getElementById('btn-run-set-import').disabled = true;
+  document.getElementById('set-csv-file-label').textContent = 'Tap to choose a CSV file';
+  document.getElementById('set-csv-file-input').value = '';
+  document.getElementById('set-import-error-section').classList.add('hidden');
+}
+
+function downloadSetImportErrors(errorRows) {
+  const headers = ['Tune 1', 'Tune 2', 'Tune 3', 'Tune 4', 'Tune 5', 'Errors'];
+  const lines = [headers.join(',')];
+  for (const row of errorRows) {
+    lines.push(headers.map(h => `"${(row[h] || '').replace(/"/g, '""')}"`).join(','));
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'set-import-errors.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function goToImport() {
   showView('import');
   document.getElementById('header-title').textContent = 'Import CSV';
@@ -1232,6 +1258,7 @@ function init() {
   });
 
   // Sets list
+  document.getElementById('btn-set-import').addEventListener('click', goToSetImport);
   document.getElementById('btn-add-set').addEventListener('click', () => goToSetForm(null));
   // Set form
   document.getElementById('btn-save-set').addEventListener('click', saveSet);
@@ -1240,7 +1267,54 @@ function init() {
     renderSetFormTuneList(e.target.value);
   });
 
-  // CSV import
+  // Set CSV import
+  const setCsvInput = document.getElementById('set-csv-file-input');
+  const runSetImportBtn = document.getElementById('btn-run-set-import');
+
+  setCsvInput.addEventListener('change', () => {
+    if (setCsvInput.files[0]) {
+      document.getElementById('set-csv-file-label').textContent = setCsvInput.files[0].name;
+      runSetImportBtn.disabled = false;
+    }
+  });
+
+  runSetImportBtn.addEventListener('click', async () => {
+    const file = setCsvInput.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById('set-import-status');
+    runSetImportBtn.disabled = true;
+    statusEl.textContent = 'Importing…';
+    statusEl.className = 'import-status';
+    document.getElementById('set-import-error-section').classList.add('hidden');
+
+    try {
+      const result = await API.importSetsCsv(file);
+      const n = result.imported;
+      const e = result.errorRows.length;
+      if (e === 0) {
+        statusEl.textContent = `Successfully imported ${n} set${n !== 1 ? 's' : ''}!`;
+        statusEl.className = 'import-status success';
+      } else if (n > 0) {
+        statusEl.textContent = `Imported ${n} set${n !== 1 ? 's' : ''}. ${e} row${e !== 1 ? 's' : ''} had errors.`;
+        statusEl.className = 'import-status success';
+      } else {
+        statusEl.textContent = `No sets imported. ${e} row${e !== 1 ? 's' : ''} had errors.`;
+        statusEl.className = 'import-status error';
+        runSetImportBtn.disabled = false;
+      }
+      if (e > 0) {
+        const errSection = document.getElementById('set-import-error-section');
+        errSection.classList.remove('hidden');
+        document.getElementById('btn-download-errors').onclick = () => downloadSetImportErrors(result.errorRows);
+      }
+    } catch (err) {
+      statusEl.textContent = 'Import failed: ' + err.message;
+      statusEl.className = 'import-status error';
+      runSetImportBtn.disabled = false;
+    }
+  });
+
+  // Tune CSV import
   const csvInput = document.getElementById('csv-file-input');
   const runImportBtn = document.getElementById('btn-run-import');
 

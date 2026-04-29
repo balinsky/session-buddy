@@ -52,5 +52,10 @@ const API = (() => {
     patchSet: (id, data) => request('PATCH', `/api/sets/${id}`, data),
     practiceSet: (id, date) => request('POST', `/api/sets/${id}/practice`, { date }),
     deleteSet: (id) => request('DELETE', `/api/sets/${id}`),
+    importSetsCsv: (file) => {
+      const form = new FormData();
+      form.append('csv', file);
+      return request('POST', '/api/sets/import', form, true);
+    },
   };
 })();

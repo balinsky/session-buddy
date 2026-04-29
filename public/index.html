@@ -251,6 +251,7 @@
           <h2>My Sets</h2>
           <div class="toolbar-actions">
             <button id="btn-set-filter" class="btn btn-small btn-outline">Filter</button>
+            <button id="btn-set-import" class="btn btn-small btn-outline">Import CSV</button>
             <button id="btn-add-set" class="btn btn-small btn-primary">+ New Set</button>
           </div>
         </div>
@@ -283,6 +284,29 @@
           <input id="set-form-search" type="search" placeholder="Search tunes to add..." />
         </div>
         <div id="set-form-tune-list" class="item-list pickable"></div>
+      </div>
+
+      <!-- SET CSV IMPORT -->
+      <div id="view-set-import" class="view">
+        <h2>Import Sets from CSV</h2>
+        <p class="hint">Each row creates one set. Tune columns must contain a thesession.org ID (e.g. <code>12345</code> or <code>12345#2</code> for a specific setting).</p>
+        <div class="import-area">
+          <label class="file-drop-zone" id="set-csv-drop-zone">
+            <span id="set-csv-file-label">Tap to choose a CSV file</span>
+            <input id="set-csv-file-input" type="file" accept=".csv" style="display:none" />
+          </label>
+          <button id="btn-run-set-import" class="btn btn-primary btn-large" disabled>Import Sets</button>
+          <div id="set-import-status" class="import-status"></div>
+          <div id="set-import-error-section" class="hidden" style="margin-top:12px;text-align:center;">
+            <p class="hint" style="margin-bottom:8px;">Some rows could not be imported. Download the error file, add the missing tunes, and re-import.</p>
+            <button id="btn-download-errors" class="btn btn-outline">Download Errors CSV</button>
+          </div>
+        </div>
+        <div class="import-notes">
+          <strong>Expected columns:</strong> Tune 1, Tune 2, Tune 3, Tune 4, Tune 5
+          <br/><br/>
+          Each value must be the Thesession ID of a tune already in your collection. To reference a specific setting, append <code>#</code> and the setting number (e.g. <code>12345#2</code>). Blank columns are ignored. A row is skipped and reported in the error file if any of its tunes cannot be found.
+        </div>
       </div>
 
       <!-- CSV IMPORT -->
