@@ -289,7 +289,7 @@
       <!-- SET CSV IMPORT -->
       <div id="view-set-import" class="view">
         <h2>Import Sets from CSV</h2>
-        <p class="hint">Each row creates one set. Tune columns must contain a thesession.org ID (e.g. <code>12345</code> or <code>12345#2</code> for a specific setting).</p>
+        <p class="hint">Each row creates one set. Tune columns must contain a thesession.org ID (e.g. <code>12345</code> or <code>12345#setting2</code> for a specific setting).</p>
         <div class="import-area">
           <label class="file-drop-zone" id="set-csv-drop-zone">
             <span id="set-csv-file-label">Tap to choose a CSV file</span>
@@ -305,7 +305,7 @@
         <div class="import-notes">
           <strong>Expected columns:</strong> Tune 1, Tune 2, Tune 3, Tune 4, Tune 5
           <br/><br/>
-          Each value must be the Thesession ID of a tune already in your collection. To reference a specific setting, append <code>#</code> and the setting number (e.g. <code>12345#2</code>). Blank columns are ignored. A row is skipped and reported in the error file if any of its tunes cannot be found.
+          Each value must be the Thesession ID of a tune already in your collection. To reference a specific setting, append <code>#setting</code> and the number (e.g. <code>12345#setting2</code>). Blank columns are ignored. A row is skipped and reported in the error file if any of its tunes cannot be found.
         </div>
       </div>
 

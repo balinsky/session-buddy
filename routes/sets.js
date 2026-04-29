@@ -90,10 +90,16 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     }
   }
 
-  function findTune(ref) {
-    const [idPart, settingPart] = ref.split('#');
+  function parseRef(ref) {
+    const [idPart, settingRaw] = ref.split('#');
     const id = idPart.trim();
-    const setting = settingPart ? settingPart.trim() : null;
+    // Accept both "setting2" and bare "2" after the #
+    const setting = settingRaw ? settingRaw.trim().replace(/^setting/i, '') : null;
+    return { id, setting };
+  }
+
+  function findTune(ref) {
+    const { id, setting } = parseRef(ref);
     const candidates = bySessionId[id] || [];
     if (candidates.length === 0) return null;
     if (setting) return candidates.find(t => String(t.setting || '').trim() === setting) || null;
@@ -119,9 +125,9 @@ router.post('/import', upload.single('csv'), async (req, res) => {
       if (tune) {
         tuneIds.push(tune.id);
       } else {
-        const [idPart, settingPart] = ref.split('#');
-        let msg = `${field} (${ref}) not found — add this tune with Thesession ID ${idPart.trim()}`;
-        if (settingPart) msg += `, Setting ${settingPart.trim()}`;
+        const { id: refId, setting: refSetting } = parseRef(ref);
+        let msg = `${field} (${ref}) not found — add this tune with Thesession ID ${refId}`;
+        if (refSetting) msg += `, Setting ${refSetting}`;
         errors.push(msg);
       }
     }
