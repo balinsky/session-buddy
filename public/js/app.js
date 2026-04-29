@@ -1023,19 +1023,71 @@ function goToSetImport() {
   document.getElementById('set-import-error-section').classList.add('hidden');
 }
 
-function downloadSetImportErrors(errorRows) {
-  const headers = ['Tune 1', 'Tune 2', 'Tune 3', 'Tune 4', 'Tune 5', 'Errors'];
-  const lines = [headers.join(',')];
-  for (const row of errorRows) {
-    lines.push(headers.map(h => `"${(row[h] || '').replace(/"/g, '""')}"`).join(','));
+function downloadCsv(filename, headers, rows) {
+  function escape(val) {
+    const s = String(val == null ? '' : val);
+    return (s.includes(',') || s.includes('"') || s.includes('\n'))
+      ? '"' + s.replace(/"/g, '""') + '"'
+      : s;
+  }
+  const lines = [headers.map(escape).join(',')];
+  for (const row of rows) {
+    lines.push(row.map(escape).join(','));
   }
   const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'set-import-errors.csv';
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadSetImportErrors(errorRows) {
+  const headers = ['Tune 1', 'Tune 2', 'Tune 3', 'Tune 4', 'Tune 5', 'Errors'];
+  downloadCsv('set-import-errors.csv', headers,
+    errorRows.map(r => headers.map(h => r[h] || ''))
+  );
+}
+
+function exportTunesCsv() {
+  const headers = [
+    'Name', 'Type', 'Key', 'Parts', 'Incipit A', 'Incipit B', 'Incipit C',
+    'Count', 'Added', 'Where', 'Who', 'Mnemonic', 'Tunebooks', 'Date Learned',
+    'Favorite', 'Learned', 'Thesession ID', 'Setting', 'Notes', 'Composer',
+    'Last Practiced Date', 'Instrument', 'Sequence ID',
+  ];
+  const rows = state.tunes.map(t => [
+    t.name, t.type, t.key, t.parts,
+    t.incipit_a, t.incipit_b, t.incipit_c,
+    t.count, t.added_date, t.where_learned, t.who,
+    t.mnemonic, t.tunebooks, t.date_learned,
+    t.favorite ? 'X' : '',
+    t.learning_status === 'Memorized' ? 'X' : '',
+    t.thesession_id, t.setting, t.notes, t.composer,
+    t.last_practiced_date, t.instrument, t.sequence_id,
+  ]);
+  downloadCsv('tunes.csv', headers, rows);
+}
+
+async function exportSetsCsv() {
+  let sets;
+  try {
+    sets = await API.getSets();
+  } catch (e) {
+    showError('Could not load sets: ' + e.message);
+    return;
+  }
+  const MAX_TUNES = 8;
+  const headers = Array.from({ length: MAX_TUNES }, (_, i) => `Tune ${i + 1}`);
+  const rows = sets.map(set => {
+    return Array.from({ length: MAX_TUNES }, (_, i) => {
+      const tune = set.tunes[i];
+      if (!tune || !tune.thesession_id) return '';
+      return tune.setting ? `${tune.thesession_id}#setting${tune.setting}` : tune.thesession_id;
+    });
+  });
+  downloadCsv('sets.csv', headers, rows);
 }
 
 function goToImport() {
@@ -1232,9 +1284,10 @@ function init() {
     renderTuneList(state.tunes, state.tuneSearch);
   });
 
-  // Add tune / import
+  // Add tune / import / export
   document.getElementById('btn-add-tune').addEventListener('click', () => goToTuneForm(null));
   document.getElementById('btn-import').addEventListener('click', goToImport);
+  document.getElementById('btn-export-tunes').addEventListener('click', exportTunesCsv);
 
   // Tune filter
   document.getElementById('btn-tune-filter').addEventListener('click', openTuneFilter);
@@ -1259,6 +1312,7 @@ function init() {
 
   // Sets list
   document.getElementById('btn-set-import').addEventListener('click', goToSetImport);
+  document.getElementById('btn-export-sets').addEventListener('click', exportSetsCsv);
   document.getElementById('btn-add-set').addEventListener('click', () => goToSetForm(null));
   // Set form
   document.getElementById('btn-save-set').addEventListener('click', saveSet);
