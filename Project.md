@@ -127,6 +127,7 @@ Shows all tune fields. "Show more" reveals hidden fields. Incipits render as she
 - **Edit** and **Delete** buttons
 - **Last Practiced** row with a **Today** button that sets the date to the current date
 - **thesession.org** row shows the link on the left and the Thesession ID right-justified on the same line
+- **Additional Info** (revealed by "Show more") includes which sets the tune belongs to, shown as tappable links that navigate to the set detail. Shows "Not in any sets yet" if the tune is not in any sets.
 
 ### Tune Form (Add / Edit)
 Full form for entering or editing a tune. After saving an edit, returns to the refreshed Tunes list. After creating a new tune, goes to the new tune's detail.
@@ -134,7 +135,7 @@ Full form for entering or editing a tune. After saving an edit, returns to the r
 ### Sets View
 Lists all sets. Favorites appear at the top (with a "Favorites" group header), then non-favorite sets under a "Sets" group header. Each card shows the tune names, the tune type (pluralized, e.g. "Jigs"; "Mixed" if more than one type), a red heart (♥) if favorited, and the A incipit of each tune (one line per tune, if the tune has an A incipit).
 
-A **Filter** button opens a filter panel (turns green when a filter is active).
+A search bar filters the list. A set is shown if the query matches any of its tunes by name, type, key, Thesession ID, or Sequence ID. A **Filter** button opens a filter panel (turns green when a filter is active).
 
 ### Set Detail View
 Shows each tune in the set with its name (tappable → opens full tune detail) and the A incipit rendered as sheet music. Intended for quick reference during practice or a live session. Only the A incipit is shown; B and C incipits are omitted.
@@ -154,10 +155,10 @@ Allows building or editing a set by selecting 1–8 tunes from the library. Layo
 After saving an edit, returns to the refreshed Sets list. After creating a new set, goes to the new set's detail.
 
 ### CSV Import View (Tunes)
-Upload a CSV to bulk-import tunes. New tunes are added to the existing collection.
+Upload a CSV to bulk-import tunes. New tunes are added to the existing collection. After a successful import an **Undo Last Import** button appears; tapping it deletes all tunes from that import after confirmation. The undo state persists until the next tune import overwrites it (navigating away does not clear it). Tune and set undo states are independent.
 
 ### CSV Import View (Sets)
-Upload a CSV to bulk-import sets. Each row creates one set. Columns are `Tune 1` through `Tune 5`; each value must be the Thesession ID of a tune already in the collection (optionally with `#setting`, e.g. `12345#setting2`). Blank columns are ignored. Rows where any tune cannot be matched are skipped and returned as a downloadable error CSV with a description of which tunes need to be added first.
+Upload a CSV to bulk-import sets. Each row creates one set. Columns are `Tune 1` through `Tune 5`; each value must be the Thesession ID of a tune already in the collection (optionally with `#setting`, e.g. `12345#setting2`). Blank columns are ignored. Rows where any tune cannot be matched are skipped and returned as a downloadable error CSV with a description of which tunes need to be added first. After a successful import an **Undo Last Import** button appears with the same persistence behaviour as for tunes.
 
 ### Filter Panel (Tunes)
 A bottom-sheet modal with the following criteria (any combination):
