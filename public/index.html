@@ -299,6 +299,9 @@
           </label>
           <button id="btn-run-set-import" class="btn btn-primary btn-large" disabled>Import Sets</button>
           <div id="set-import-status" class="import-status"></div>
+          <div id="set-import-undo-section" class="hidden import-undo-section">
+            <button id="btn-undo-set-import" class="btn btn-outline">Undo Last Import</button>
+          </div>
           <div id="set-import-error-section" class="hidden" style="margin-top:12px;text-align:center;">
             <p class="hint" style="margin-bottom:8px;">Some rows could not be imported. Download the error file, add the missing tunes, and re-import.</p>
             <button id="btn-download-errors" class="btn btn-outline">Download Errors CSV</button>
@@ -322,6 +325,9 @@
           </label>
           <button id="btn-run-import" class="btn btn-primary btn-large" disabled>Import Tunes</button>
           <div id="import-status" class="import-status"></div>
+          <div id="import-undo-section" class="hidden import-undo-section">
+            <button id="btn-undo-import" class="btn btn-outline">Undo Last Import</button>
+          </div>
         </div>
         <div class="import-notes">
           <strong>Expected columns:</strong> Name, Type, Key, Parts, Incipit A, Incipit B, Incipit C, Count, Added, Where, Who, Mnemonic, Tunebooks, Date Learned, Favorite, Thesession ID, Setting, Notes, Composer, Last Practiced Date, Instrument, Sequence ID

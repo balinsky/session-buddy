@@ -420,14 +420,15 @@ async function goToTuneDetail(tuneId) {
   document.getElementById('header-title').textContent = 'Tune Detail';
 
   try {
-    const tune = await API.getTune(tuneId);
-    renderTuneDetail(tune);
+    const [tune, allSets] = await Promise.all([API.getTune(tuneId), API.getSets()]);
+    const tuneSets = allSets.filter(s => s.tunes.some(t => t.id === tuneId));
+    renderTuneDetail(tune, tuneSets);
   } catch (e) {
     showError('Could not load tune: ' + e.message);
   }
 }
 
-function renderTuneDetail(tune) {
+function renderTuneDetail(tune, tuneSets = []) {
   const sessionUrl = buildSessionUrl(tune.thesession_id, tune.setting);
 
   let html = `
@@ -509,12 +510,23 @@ function renderTuneDetail(tune) {
   if (tune.added_date) hiddenFields.push(['Date Added', esc(tune.added_date)]);
   if (tune.setting) hiddenFields.push(['Setting', esc(tune.setting)]);
 
-  if (hiddenFields.length > 0) {
+  // Always show Additional Info — it always has at least the "In sets" row
+  {
     html += `<button class="show-more-btn" id="btn-show-more">Show more &#8964;</button>`;
     html += `<div class="detail-card hidden" id="hidden-fields-card"><div class="detail-card-title">Additional Info</div>`;
     hiddenFields.forEach(([label, value]) => {
       html += `<div class="detail-field"><span class="detail-field-label">${label}</span><span class="detail-field-value">${value}</span></div>`;
     });
+    if (tuneSets.length > 0) {
+      html += `<div class="detail-field detail-field--sets"><span class="detail-field-label">In sets</span><span class="detail-field-value">`;
+      tuneSets.forEach(set => {
+        const setLabel = set.tunes.map(t => esc(t.name)).join(' / ');
+        html += `<span class="tune-in-set-link" data-set-id="${set.id}">${setLabel} &#8599;</span>`;
+      });
+      html += `</span></div>`;
+    } else {
+      html += `<div class="detail-field"><span class="detail-field-label">In sets</span><span class="detail-field-value"><em>Not in any sets yet</em></span></div>`;
+    }
     html += `</div>`;
   }
 
@@ -577,6 +589,10 @@ function renderTuneDetail(tune) {
     } catch (e) {
       showError('Could not update: ' + e.message);
     }
+  });
+
+  document.querySelectorAll('.tune-in-set-link').forEach(el => {
+    el.addEventListener('click', () => goToSetDetail(Number(el.dataset.setId)));
   });
 
   const showMoreBtn = document.getElementById('btn-show-more');
@@ -1043,6 +1059,47 @@ async function deleteSet(set) {
 
 // ===== CSV IMPORT VIEW =====
 
+function restoreTuneImportUndo() {
+  const saved = localStorage.getItem('lastTuneImport');
+  const undoSection = document.getElementById('import-undo-section');
+  if (!saved) { undoSection.classList.add('hidden'); return; }
+  const { createdIds, count } = JSON.parse(saved);
+  undoSection.classList.remove('hidden');
+  document.getElementById('btn-undo-import').onclick = async () => {
+    if (!confirm(`Delete the ${count} tune${count !== 1 ? 's' : ''} that were imported?`)) return;
+    undoSection.classList.add('hidden');
+    const statusEl = document.getElementById('import-status');
+    statusEl.textContent = 'Undoing…';
+    statusEl.className = 'import-status';
+    await Promise.allSettled(createdIds.map(id => API.deleteTune(id)));
+    localStorage.removeItem('lastTuneImport');
+    state.tunes = await API.getTunes();
+    statusEl.textContent = `Import undone — ${count} tune${count !== 1 ? 's' : ''} deleted.`;
+    statusEl.className = 'import-status';
+    document.getElementById('btn-run-import').disabled = false;
+  };
+}
+
+function restoreSetImportUndo() {
+  const saved = localStorage.getItem('lastSetImport');
+  const undoSection = document.getElementById('set-import-undo-section');
+  if (!saved) { undoSection.classList.add('hidden'); return; }
+  const { createdIds, count } = JSON.parse(saved);
+  undoSection.classList.remove('hidden');
+  document.getElementById('btn-undo-set-import').onclick = async () => {
+    if (!confirm(`Delete the ${count} set${count !== 1 ? 's' : ''} that were imported?`)) return;
+    undoSection.classList.add('hidden');
+    const statusEl = document.getElementById('set-import-status');
+    statusEl.textContent = 'Undoing…';
+    statusEl.className = 'import-status';
+    await Promise.allSettled(createdIds.map(id => API.deleteSet(id)));
+    localStorage.removeItem('lastSetImport');
+    statusEl.textContent = `Import undone — ${count} set${count !== 1 ? 's' : ''} deleted.`;
+    statusEl.className = 'import-status';
+    document.getElementById('btn-run-set-import').disabled = false;
+  };
+}
+
 function goToSetImport() {
   showView('set-import');
   document.getElementById('header-title').textContent = 'Import Sets CSV';
@@ -1052,6 +1109,7 @@ function goToSetImport() {
   document.getElementById('set-csv-file-label').textContent = 'Tap to choose a CSV file';
   document.getElementById('set-csv-file-input').value = '';
   document.getElementById('set-import-error-section').classList.add('hidden');
+  restoreSetImportUndo();
 }
 
 function downloadCsv(filename, headers, rows) {
@@ -1129,6 +1187,7 @@ function goToImport() {
   document.getElementById('btn-run-import').disabled = true;
   document.getElementById('csv-file-label').textContent = 'Tap to choose a CSV file';
   document.getElementById('csv-file-input').value = '';
+  restoreTuneImportUndo();
 }
 
 // ===== SYNC CODE MODAL =====
@@ -1371,6 +1430,7 @@ function init() {
     statusEl.textContent = 'Importing…';
     statusEl.className = 'import-status';
     document.getElementById('set-import-error-section').classList.add('hidden');
+    document.getElementById('set-import-undo-section').classList.add('hidden');
 
     try {
       const result = await API.importSetsCsv(file);
@@ -1389,6 +1449,10 @@ function init() {
         const errSection = document.getElementById('set-import-error-section');
         errSection.classList.remove('hidden');
         document.getElementById('btn-download-errors').onclick = () => downloadSetImportErrors(result.errorRows);
+      }
+      if (n > 0 && result.createdIds?.length > 0) {
+        localStorage.setItem('lastSetImport', JSON.stringify({ createdIds: result.createdIds, count: n }));
+        restoreSetImportUndo();
       }
     } catch (err) {
       statusEl.textContent = 'Import failed: ' + err.message;
@@ -1415,12 +1479,18 @@ function init() {
     runImportBtn.disabled = true;
     statusEl.textContent = 'Importing…';
     statusEl.className = 'import-status';
+    document.getElementById('import-undo-section').classList.add('hidden');
 
     try {
       const result = await API.importCsv(file);
-      statusEl.textContent = `Successfully imported ${result.imported} tune${result.imported !== 1 ? 's' : ''}!`;
+      const n = result.imported;
+      statusEl.textContent = `Successfully imported ${n} tune${n !== 1 ? 's' : ''}!`;
       statusEl.className = 'import-status success';
       state.tunes = await API.getTunes();
+      if (n > 0 && result.createdIds?.length > 0) {
+        localStorage.setItem('lastTuneImport', JSON.stringify({ createdIds: result.createdIds, count: n }));
+        restoreTuneImportUndo();
+      }
     } catch (e) {
       statusEl.textContent = 'Import failed: ' + e.message;
       statusEl.className = 'import-status error';

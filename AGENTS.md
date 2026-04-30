@@ -4,4 +4,4 @@ I'm Andy. I'm an amateur at making software, just learning the basics, and I'd l
 
 Begin every session by reading the project context files starting with Project.md
 Wherever you are doing something potentially destructive, take extra care to ensure that I am aware of what is going on, and always include facilitates like backups in case things go wrong. 
-
+I prefer CamelCase where possible for variable names.

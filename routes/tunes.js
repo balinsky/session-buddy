@@ -148,7 +148,7 @@ router.post('/import', upload.single('csv'), async (req, res) => {
 
   try {
     const imported = await db.insertManyTunes(req.user.id, tunes);
-    res.json({ imported: imported.length });
+    res.json({ imported: imported.length, createdIds: imported.map(t => t.id) });
   } catch (err) {
     res.status(500).json({ error: 'Database error during import: ' + err.message });
   }

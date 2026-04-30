@@ -18,6 +18,12 @@ A mobile-friendly Node.js web app for tracking Irish traditional music tunes and
 
 ## Core Concepts
 
+### Guidelines for the AI when working on this code
+Keep a reasonable level of clear modularity in this application, and if you detect disorganized code or breaks in the modularity, suggest fixing it.
+
+Right now, all my buttons are clear or green, and delete buttons are red, but I can imagine wanting to change them. Make sure that's easy and that all the buttons that do a similar function share the same style definition.
+
+
 ### Tunes
 Tunes are the primary entity. Each tune has the following fields:
 
@@ -107,7 +113,7 @@ Lists all tunes. Tunes are grouped and sorted as follows:
 
 Within each group, "The X" sorts as "X, The" but displays as "The X".
 
-Each card shows the tune name, type/key, a tappable status badge, and the A incipit rendered as a single line of sheet music. Tapping the status badge cycles the status (Not Learned → Learning → Memorized → Not Learned) without opening the detail view. Favorite tunes show a red heart (♥); tapping it toggles the favorite.
+Each card shows the tune name, type/key, a tappable status badge, the A incipit rendered as a single line of sheet music, and the Count. The Count is displayed inline on the type/key/status row, right-justified, with a **−** button to its left and a **+** button to its right. Tapping +/− increments or decrements the count immediately (floor of 0); the change is saved via a PATCH call without re-rendering the full list. Tapping the status badge cycles the status (Not Learned → Learning → Memorized → Not Learned) without opening the detail view. Favorite tunes show a red heart (♥); tapping it toggles the favorite.
 
 A search bar filters the list by name, type, key, Thesession ID, or Sequence ID. A **Filter** button opens a filter panel (turns green when a filter is active). A **+ Add Tune** button opens a blank tune form.
 
@@ -264,3 +270,17 @@ Meter mapping by type:
 | M:3/2 | 3/2 Tune |
 | M:7/8 | 7/8 Tune |
 | M:4/4 | March, Strathspey, Highland, Fling, Gavotte, Barndance, Rond, Shetland |
+
+---
+
+## Dev Tools
+
+### Seed Script (`scripts/seed.js`)
+Populates a local PostgreSQL database with 20 realistic tunes (mix of types, keys, learning statuses, incipits, instruments, and thesession IDs) and 5 sets. Wipes and re-inserts data for the target sync code on each run.
+
+```
+node scripts/seed.js                     # uses sync code: test-data-01
+node scripts/seed.js --sync-code my-code # uses a custom sync code
+```
+
+Requires `DATABASE_URL` in `.env` pointing to a local PostgreSQL instance.

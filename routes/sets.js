@@ -115,6 +115,7 @@ router.post('/import', upload.single('csv'), async (req, res) => {
   let imported = 0;
   let duplicates = 0;
   const errorRows = [];
+  const createdIds = [];
 
   for (const row of records) {
     const refs = [];
@@ -152,8 +153,9 @@ router.post('/import', upload.single('csv'), async (req, res) => {
       duplicates++;
     } else {
       try {
-        await db.createSet(req.user.id, tuneIds);
+        const created = await db.createSet(req.user.id, tuneIds);
         existingSignatures.add(tuneIds.join(','));
+        createdIds.push(created.id);
         imported++;
       } catch (err) {
         errorRows.push({
@@ -168,7 +170,7 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     }
   }
 
-  res.json({ imported, duplicates, errorRows });
+  res.json({ imported, duplicates, errorRows, createdIds });
 });
 
 router.put('/:id', async (req, res) => {

@@ -490,6 +490,16 @@ html, body {
 .field-value-split { display: flex; justify-content: space-between; align-items: center; width: 100%; }
 .field-value-right { color: var(--text-muted); font-size: 0.85em; white-space: nowrap; padding-left: 8px; }
 
+.detail-field--sets { align-items: flex-start; }
+.detail-field--sets .detail-field-value { display: flex; flex-direction: column; gap: 4px; }
+
+.tune-in-set-link {
+  color: var(--green);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.tune-in-set-link:hover { text-decoration: underline; }
+
 .show-more-btn {
   display: block;
   width: 100%;
@@ -744,6 +754,8 @@ html, body {
 
 .import-status.success { background: var(--status-memorized-bg); color: var(--status-memorized-text); }
 .import-status.error { background: #f8d7da; color: #721c24; }
+
+.import-undo-section { margin-top: 10px; text-align: center; }
 
 .import-notes {
   font-size: 0.82rem;
