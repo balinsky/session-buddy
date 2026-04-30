@@ -45,11 +45,13 @@ function nextStatus(current) {
 
 const state = {
   tunes: [],
+  sets: [],
   editingTune: null,
   editingSet: null,
   selectedTuneIds: [],
   backStack: [],
   tuneSearch: '',
+  setSearch: '',
   tuneFilter: {
     favoriteOnly: false,
     statuses: [],
@@ -713,26 +715,41 @@ async function goToSets() {
   state.backStack = ['sets'];
   showView('sets', false);
   document.getElementById('header-title').textContent = 'My Sets';
+  document.getElementById('set-search').value = state.setSearch;
 
   try {
-    const sets = await API.getSets();
-    renderSetList(sets);
+    state.sets = await API.getSets();
+    renderSetList(state.sets, state.setSearch);
   } catch (e) {
     showError('Could not load sets: ' + e.message);
   }
 }
 
-function renderSetList(sets) {
+function renderSetList(sets, searchQuery) {
   const container = document.getElementById('set-list');
+  const query = (searchQuery || '').toLowerCase().trim();
 
-  const filtered = applySetFilter(sets);
+  let filtered = sets;
+  if (query) {
+    filtered = filtered.filter(s =>
+      (s.tunes || []).some(t =>
+        t.name.toLowerCase().includes(query) ||
+        (t.type || '').toLowerCase().includes(query) ||
+        (t.key || '').toLowerCase().includes(query) ||
+        (t.thesession_id || '').toLowerCase().includes(query) ||
+        (t.sequence_id || '').toLowerCase().includes(query)
+      )
+    );
+  }
+  filtered = applySetFilter(filtered);
   updateFilterBtnStyle('btn-set-filter', isSetFilterActive());
 
+  const isActive = query || isSetFilterActive();
   if (filtered.length === 0) {
     container.innerHTML = `
       <div class="empty-list">
         <div class="empty-icon">&#127925;</div>
-        <p>${isSetFilterActive() ? 'No sets match the filter.' : 'No sets yet. Tap "+ New Set" to build your first set!'}</p>
+        <p>${isActive ? 'No sets match.' : 'No sets yet. Tap "+ New Set" to build your first set!'}</p>
       </div>`;
     return;
   }
@@ -769,13 +786,12 @@ function renderSetList(sets) {
       btn.classList.toggle('is-favorite', !!newFav);
       try {
         await API.patchSet(setId, { favorite: newFav });
-        // Refresh the full list so grouping updates
-        const sets = await API.getSets();
-        renderSetList(sets);
+        state.sets = await API.getSets();
+        renderSetList(state.sets, state.setSearch);
       } catch (err) {
         showError('Could not update favorite: ' + err.message);
-        const sets = await API.getSets();
-        renderSetList(sets);
+        state.sets = await API.getSets();
+        renderSetList(state.sets, state.setSearch);
       }
     });
   });
@@ -1261,16 +1277,15 @@ async function applySetFilterFromModal() {
     types: Array.from(document.querySelectorAll('.sf-type:checked')).map(cb => cb.value),
   };
   closeSetFilter();
-  // Re-render the sets view if we're on it, or just update button style
-  const sets = await API.getSets();
-  renderSetList(sets);
+  state.sets = await API.getSets();
+  renderSetList(state.sets, state.setSearch);
 }
 
 async function clearSetFilter() {
   state.setFilter = { favoriteOnly: false, types: [] };
   closeSetFilter();
-  const sets = await API.getSets();
-  renderSetList(sets);
+  state.sets = await API.getSets();
+  renderSetList(state.sets, state.setSearch);
 }
 
 // ===== INCIPIT LIVE PREVIEW IN FORM =====
@@ -1372,6 +1387,12 @@ function init() {
   document.getElementById('tune-search').addEventListener('input', e => {
     state.tuneSearch = e.target.value;
     renderTuneList(state.tunes, state.tuneSearch);
+  });
+
+  // Set list search
+  document.getElementById('set-search').addEventListener('input', e => {
+    state.setSearch = e.target.value;
+    renderSetList(state.sets, state.setSearch);
   });
 
   // Add tune / import / export
