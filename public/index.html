@@ -333,11 +333,23 @@
           <div id="import-undo-section" class="hidden import-undo-section">
             <button id="btn-undo-import" class="btn btn-outline">Undo Last Import</button>
           </div>
+          <div id="import-error-section" class="hidden" style="margin-top:12px;text-align:center;">
+            <p class="hint" style="margin-bottom:8px;">Some tunes were skipped as duplicates. Download the error file to see which ones.</p>
+            <button id="btn-download-tune-errors" class="btn btn-outline">Download Errors CSV</button>
+          </div>
         </div>
         <div class="import-notes">
           <strong>Expected columns:</strong> Name, Type, Key, Parts, Incipit A, Incipit B, Incipit C, Count, Added, Where, Who, Mnemonic, Tunebooks, Date Learned, Favorite, Thesession ID, Setting, Notes, Composer, Last Practiced Date, Instrument, Sequence ID
           <br/><br/>
           <strong>Learning status:</strong> Include a <code>Learned</code> column — <code>X</code> imports as Memorized, anything else imports as Not Learned. The "Learning" status is set manually in the app.
+          <br/><br/>
+          <strong>Duplicate handling:</strong> Tunes are skipped if they match an existing tune by name or Thesession ID.
+        </div>
+        <div class="import-notes" style="margin-top:12px;">
+          <strong>Duplicate checker</strong>
+          <br/><br/>
+          <button id="btn-check-duplicates" class="btn btn-outline btn-small">Check Collection for Duplicates</button>
+          <div id="duplicate-check-results" class="hidden" style="margin-top:12px;"></div>
         </div>
       </div>
 

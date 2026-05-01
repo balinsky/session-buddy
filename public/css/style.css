@@ -757,6 +757,30 @@ html, body {
 
 .import-undo-section { margin-top: 10px; text-align: center; }
 
+.duplicate-group {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: var(--white);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--gold);
+}
+
+.duplicate-reason {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.duplicate-tune-link {
+  font-size: 0.9rem;
+  color: var(--green);
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.duplicate-tune-link:hover { text-decoration: underline; }
+
 .import-notes {
   font-size: 0.82rem;
   color: var(--text-muted);

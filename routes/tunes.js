@@ -146,9 +146,51 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     });
   }
 
+  // Fetch existing tunes to detect duplicates
+  let existingTunes;
   try {
-    const imported = await db.insertManyTunes(req.user.id, tunes);
-    res.json({ imported: imported.length, createdIds: imported.map(t => t.id) });
+    existingTunes = await db.getTunesByUser(req.user.id);
+  } catch (err) {
+    return res.status(500).json({ error: 'Could not load existing tunes: ' + err.message });
+  }
+
+  const existingNames = new Set(existingTunes.map(t => (t.name || '').toLowerCase().trim()).filter(Boolean));
+  const existingSessionIds = new Set(existingTunes.map(t => (t.thesession_id || '').trim()).filter(Boolean));
+
+  const toImport = [];
+  const errorRows = [];
+
+  for (const tune of tunes) {
+    const name = (tune.name || '').toLowerCase().trim();
+    const sid = (tune.thesession_id || '').trim();
+    const reasons = [];
+
+    if (name && existingNames.has(name)) reasons.push(`name "${tune.name}" already exists`);
+    if (sid && existingSessionIds.has(sid)) reasons.push(`Thesession ID ${sid} already exists`);
+
+    if (reasons.length > 0) {
+      errorRows.push({
+        Name: tune.name,
+        Type: tune.type || '',
+        Key: tune.key || '',
+        'Thesession ID': tune.thesession_id || '',
+        Errors: reasons.join('; '),
+      });
+    } else {
+      toImport.push(tune);
+      if (name) existingNames.add(name);
+      if (sid) existingSessionIds.add(sid);
+    }
+  }
+
+  try {
+    const imported = toImport.length > 0 ? await db.insertManyTunes(req.user.id, toImport) : [];
+    res.json({
+      imported: imported.length,
+      duplicates: errorRows.length,
+      errorRows,
+      createdIds: imported.map(t => t.id),
+    });
   } catch (err) {
     res.status(500).json({ error: 'Database error during import: ' + err.message });
   }

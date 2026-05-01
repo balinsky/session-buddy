@@ -1195,6 +1195,72 @@ async function exportSetsCsv() {
   downloadCsv('sets.csv', headers, rows);
 }
 
+function downloadTuneImportErrors(errorRows) {
+  const headers = ['Name', 'Type', 'Key', 'Thesession ID', 'Errors'];
+  const rows = errorRows.map(r => [r.Name, r.Type, r.Key, r['Thesession ID'], r.Errors]);
+  downloadCsv('tune-import-errors.csv', headers, rows);
+}
+
+function checkTuneDuplicates() {
+  const byName = {};
+  const bySid = {};
+
+  for (const tune of state.tunes) {
+    const name = (tune.name || '').toLowerCase().trim();
+    const sid = (tune.thesession_id || '').trim();
+    if (name) {
+      if (!byName[name]) byName[name] = [];
+      byName[name].push(tune);
+    }
+    if (sid) {
+      if (!bySid[sid]) bySid[sid] = [];
+      bySid[sid].push(tune);
+    }
+  }
+
+  const groups = [];
+  const seen = new Set();
+
+  for (const [, tunes] of Object.entries(byName)) {
+    if (tunes.length > 1) {
+      const sig = 'n:' + tunes.map(t => t.id).sort().join(',');
+      if (!seen.has(sig)) {
+        seen.add(sig);
+        groups.push({ reason: `Same name: "${tunes[0].name}"`, tunes });
+      }
+    }
+  }
+  for (const [sid, tunes] of Object.entries(bySid)) {
+    if (tunes.length > 1) {
+      const sig = 's:' + tunes.map(t => t.id).sort().join(',');
+      if (!seen.has(sig)) {
+        seen.add(sig);
+        groups.push({ reason: `Same Thesession ID: ${sid}`, tunes });
+      }
+    }
+  }
+
+  const resultsEl = document.getElementById('duplicate-check-results');
+  if (groups.length === 0) {
+    resultsEl.innerHTML = '<p class="hint">No duplicates found.</p>';
+  } else {
+    let html = `<p class="hint">${groups.length} duplicate group${groups.length !== 1 ? 's' : ''} found:</p>`;
+    groups.forEach(g => {
+      html += `<div class="duplicate-group"><div class="duplicate-reason">${esc(g.reason)}</div>`;
+      g.tunes.forEach(t => {
+        const meta = [t.type, t.key, t.learning_status].filter(Boolean).join(' · ');
+        html += `<div class="duplicate-tune-link" data-id="${t.id}">${esc(t.name)}${meta ? ' — ' + esc(meta) : ''} &#8599;</div>`;
+      });
+      html += `</div>`;
+    });
+    resultsEl.innerHTML = html;
+    resultsEl.querySelectorAll('.duplicate-tune-link').forEach(el => {
+      el.addEventListener('click', () => goToTuneDetail(Number(el.dataset.id)));
+    });
+  }
+  resultsEl.classList.remove('hidden');
+}
+
 function goToImport() {
   showView('import');
   document.getElementById('header-title').textContent = 'Import CSV';
@@ -1501,22 +1567,38 @@ function init() {
     statusEl.textContent = 'Importing…';
     statusEl.className = 'import-status';
     document.getElementById('import-undo-section').classList.add('hidden');
+    document.getElementById('import-error-section').classList.add('hidden');
 
     try {
       const result = await API.importCsv(file);
       const n = result.imported;
-      statusEl.textContent = `Successfully imported ${n} tune${n !== 1 ? 's' : ''}!`;
-      statusEl.className = 'import-status success';
+      const d = result.duplicates || 0;
+      const parts = [];
+      if (n > 0) parts.push(`${n} tune${n !== 1 ? 's' : ''} imported`);
+      if (d > 0) parts.push(`${d} duplicate${d !== 1 ? 's' : ''} skipped`);
+      if (parts.length === 0) parts.push('No tunes imported');
+      statusEl.textContent = parts.join(', ') + '.';
+      statusEl.className = n > 0 ? 'import-status success' : 'import-status error';
+      if (n === 0 && d === 0) runImportBtn.disabled = false;
       state.tunes = await API.getTunes();
       if (n > 0 && result.createdIds?.length > 0) {
         localStorage.setItem('lastTuneImport', JSON.stringify({ createdIds: result.createdIds, count: n }));
         restoreTuneImportUndo();
+      }
+      if (d > 0 && result.errorRows?.length > 0) {
+        document.getElementById('import-error-section').classList.remove('hidden');
+        document.getElementById('btn-download-tune-errors').onclick = () => downloadTuneImportErrors(result.errorRows);
       }
     } catch (e) {
       statusEl.textContent = 'Import failed: ' + e.message;
       statusEl.className = 'import-status error';
       runImportBtn.disabled = false;
     }
+  });
+
+  document.getElementById('btn-check-duplicates').addEventListener('click', async () => {
+    if (state.tunes.length === 0) state.tunes = await API.getTunes();
+    checkTuneDuplicates();
   });
 
   // Sync modal
