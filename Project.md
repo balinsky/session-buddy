@@ -155,7 +155,13 @@ Allows building or editing a set by selecting 1–8 tunes from the library. Layo
 After saving an edit, returns to the refreshed Sets list. After creating a new set, goes to the new set's detail.
 
 ### CSV Import View (Tunes)
-Upload a CSV to bulk-import tunes. New tunes are added to the existing collection. After a successful import an **Undo Last Import** button appears; tapping it deletes all tunes from that import after confirmation. The undo state persists until the next tune import overwrites it (navigating away does not clear it). Tune and set undo states are independent.
+Upload a CSV to bulk-import tunes. New tunes are added to the existing collection.
+
+**Duplicate detection:** A tune is skipped if it matches an existing tune by name (case-insensitive) or Thesession ID. Within-file duplicates are also caught. The result message reports how many were imported and how many were skipped. Skipped tunes appear in a downloadable error CSV.
+
+**Undo Last Import:** After a successful import this button appears. Tapping it deletes all tunes from that import after confirmation. The undo state persists until the next tune import overwrites it (navigating away does not clear it). Tune and set undo states are independent.
+
+**Duplicate checker:** A "Check Collection for Duplicates" button scans all tunes in the collection and lists any groups that share a name or Thesession ID. Each result is tappable and navigates to that tune's detail view.
 
 ### CSV Import View (Sets)
 Upload a CSV to bulk-import sets. Each row creates one set. Columns are `Tune 1` through `Tune 5`; each value must be the Thesession ID of a tune already in the collection (optionally with `#setting`, e.g. `12345#setting2`). Blank columns are ignored. Rows where any tune cannot be matched are skipped and returned as a downloadable error CSV with a description of which tunes need to be added first. After a successful import an **Undo Last Import** button appears with the same persistence behaviour as for tunes.
