@@ -60,6 +60,11 @@ async function init() {
   await pool.query(`ALTER TABLE tunes ADD COLUMN IF NOT EXISTS sequence_id TEXT`);
   await pool.query(`ALTER TABLE sets ADD COLUMN IF NOT EXISTS favorite INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE sets ADD COLUMN IF NOT EXISTS last_practiced_date TEXT`);
+  // Indexes on foreign keys used in every read operation
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tunes_user_id ON tunes(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_sets_user_id ON sets(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_set_tunes_set_id ON set_tunes(set_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_set_tunes_tune_id ON set_tunes(tune_id)`);
 }
 
 // --- Users ---
