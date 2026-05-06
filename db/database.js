@@ -354,7 +354,7 @@ async function getTuneImageList(tuneId, userId) {
 
 async function getTuneImageData(imageId, tuneId, userId) {
   const { rows } = await pool.query(
-    `SELECT filename, mime_type, data
+    `SELECT filename, mime_type, data, created_at
      FROM tune_images WHERE id = $1 AND tune_id = $2 AND user_id = $3`,
     [imageId, tuneId, userId]
   );

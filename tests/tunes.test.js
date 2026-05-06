@@ -315,3 +315,206 @@ describe('POST /api/tunes/import', () => {
     expect(res.body.error).toMatch(/could not parse csv/i);
   });
 });
+
+// ── Image serving ─────────────────────────────────────────────────────────────
+
+describe('GET /api/tunes/:id/image/:imageId', () => {
+  const SYNC = 'test-code';
+  const IMAGE = {
+    filename: 'a.png',
+    mime_type: 'image/png',
+    data: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+    created_at: new Date('2026-04-01T12:00:00Z'),
+  };
+
+  it('serves the image with ETag, Last-Modified, and immutable cache headers', async () => {
+    db.getTuneImageData.mockResolvedValue(IMAGE);
+    const res = await request(app)
+      .get('/api/tunes/10/image/42')
+      .set('x-sync-code', SYNC);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(res.headers['etag']).toBe('"img-42"');
+    expect(res.headers['last-modified']).toBe(IMAGE.created_at.toUTCString());
+    expect(res.headers['cache-control']).toMatch(/immutable/);
+    expect(res.body).toEqual(IMAGE.data);
+  });
+
+  it('returns 304 when the client sends a matching If-None-Match', async () => {
+    db.getTuneImageData.mockResolvedValue(IMAGE);
+    const res = await request(app)
+      .get('/api/tunes/10/image/42')
+      .set('x-sync-code', SYNC)
+      .set('If-None-Match', '"img-42"');
+    expect(res.status).toBe(304);
+    expect(res.headers['etag']).toBe('"img-42"');
+  });
+});
+
+// ── POST /api/tunes/:id/merge ─────────────────────────────────────────────────
+
+describe('POST /api/tunes/:id/merge', () => {
+  const SYNC = 'test-code';
+
+  it('returns 400 when mergeIds is missing', async () => {
+    const res = await request(app)
+      .post('/api/tunes/1/merge')
+      .set('x-sync-code', SYNC)
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/mergeids/i);
+  });
+
+  it('returns 400 when mergeIds is an empty array', async () => {
+    const res = await request(app)
+      .post('/api/tunes/1/merge')
+      .set('x-sync-code', SYNC)
+      .send({ mergeIds: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when the db indicates one or more tunes are not owned', async () => {
+    db.mergeTunes.mockResolvedValue(null);
+    const res = await request(app)
+      .post('/api/tunes/1/merge')
+      .set('x-sync-code', SYNC)
+      .send({ mergeIds: [2, 3] });
+    expect(res.status).toBe(404);
+  });
+
+  it('coerces id strings to numbers and returns the merged tune', async () => {
+    db.mergeTunes.mockResolvedValue({ ...VALID_TUNE, count: 7 });
+    const res = await request(app)
+      .post('/api/tunes/1/merge')
+      .set('x-sync-code', SYNC)
+      .send({ mergeIds: ['2', '3'] });
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(7);
+    expect(db.mergeTunes).toHaveBeenCalledWith(1, [2, 3], 1);
+  });
+});
+
+// ── POST /api/tunes/import-images (tarball) ───────────────────────────────────
+
+// Builds a uncompressed USTAR tarball in memory for testing the import route.
+// Hand-rolled rather than disk-backed to keep tests hermetic and fast.
+function buildTarball(files) {
+  const parts = [];
+  for (const { name, content } of files) {
+    const buf = Buffer.isBuffer(content) ? content : Buffer.from(content);
+    const header = Buffer.alloc(512);
+    header.write(name, 0, 100);
+    header.write('0000644\0', 100, 8);             // mode
+    header.write('0000000\0', 108, 8);             // uid
+    header.write('0000000\0', 116, 8);             // gid
+    header.write(buf.length.toString(8).padStart(11, '0') + '\0', 124, 12); // size
+    header.write('00000000000\0', 136, 12);        // mtime
+    header.write('        ', 148, 8);              // checksum field filled with spaces for the sum
+    header.write('0', 156, 1);                     // typeflag: regular file
+    header.write('ustar\0', 257, 6);               // magic
+    header.write('00', 263, 2);                    // version
+    let sum = 0;
+    for (let i = 0; i < 512; i++) sum += header[i];
+    header.write(sum.toString(8).padStart(6, '0') + '\0 ', 148, 8);
+    parts.push(header, buf);
+    const padLen = (512 - (buf.length % 512)) % 512;
+    if (padLen > 0) parts.push(Buffer.alloc(padLen));
+  }
+  parts.push(Buffer.alloc(1024)); // two zero blocks signal end-of-archive
+  return Buffer.concat(parts);
+}
+
+describe('POST /api/tunes/import-images', () => {
+  const SYNC = 'test-code';
+  const TUNES_WITH_SIDS = [
+    { id: 11, thesession_id: '12345', user_id: 1, name: 'Tune A' },
+    { id: 22, thesession_id: '67890', user_id: 1, name: 'Tune B' },
+  ];
+
+  beforeEach(() => {
+    db.getTunesByUser.mockResolvedValue(TUNES_WITH_SIDS);
+    db.addTuneImage.mockResolvedValue({ id: 99 });
+  });
+
+  it('returns 400 when no tarball file is attached', async () => {
+    const res = await request(app)
+      .post('/api/tunes/import-images')
+      .set('x-sync-code', SYNC);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/tarball file required/i);
+  });
+
+  it('matches files to tunes by digit-runs in the filename', async () => {
+    const buf = buildTarball([
+      { name: 'sheet-12345.png', content: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
+      { name: 'whistle-67890.jpg', content: Buffer.from([0xff, 0xd8, 0xff]) },
+    ]);
+    const res = await request(app)
+      .post('/api/tunes/import-images')
+      .set('x-sync-code', SYNC)
+      .attach('tarball', buf, 'archive.tar');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(2);
+    expect(res.body.unmatched).toEqual([]);
+    expect(db.addTuneImage).toHaveBeenCalledTimes(2);
+    expect(db.addTuneImage).toHaveBeenCalledWith(11, 1, 'sheet-12345.png', 'image/png', expect.any(Buffer));
+    expect(db.addTuneImage).toHaveBeenCalledWith(22, 1, 'whistle-67890.jpg', 'image/jpeg', expect.any(Buffer));
+  });
+
+  it('reports unmatched filenames whose digit-runs do not match any tune', async () => {
+    const buf = buildTarball([
+      { name: 'sheet-99999.png', content: Buffer.from([0x89]) },
+    ]);
+    const res = await request(app)
+      .post('/api/tunes/import-images')
+      .set('x-sync-code', SYNC)
+      .attach('tarball', buf, 'archive.tar');
+    expect(res.body.imported).toBe(0);
+    expect(res.body.unmatched).toEqual(['sheet-99999.png']);
+    expect(db.addTuneImage).not.toHaveBeenCalled();
+  });
+
+  it('silently skips entries whose extension is not jpg/png/pdf', async () => {
+    const buf = buildTarball([
+      { name: 'note-12345.txt', content: Buffer.from('hi') },
+    ]);
+    const res = await request(app)
+      .post('/api/tunes/import-images')
+      .set('x-sync-code', SYNC)
+      .attach('tarball', buf, 'archive.tar');
+    // Non-image entries are filtered out before matching, so they're not
+    // reported as unmatched either — they simply don't exist as far as
+    // import-images is concerned.
+    expect(res.body.imported).toBe(0);
+    expect(res.body.unmatched).toEqual([]);
+    expect(db.addTuneImage).not.toHaveBeenCalled();
+  });
+
+  it('detects gzipped tarballs via magic bytes and decompresses transparently', async () => {
+    const zlib = require('zlib');
+    const rawTar = buildTarball([
+      { name: 'sheet-12345.png', content: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
+    ]);
+    const gzipped = zlib.gzipSync(rawTar);
+    expect(gzipped[0]).toBe(0x1f);
+    expect(gzipped[1]).toBe(0x8b);
+    const res = await request(app)
+      .post('/api/tunes/import-images')
+      .set('x-sync-code', SYNC)
+      .attach('tarball', gzipped, 'archive.tar.gz');
+    expect(res.body.imported).toBe(1);
+    expect(db.addTuneImage).toHaveBeenCalledWith(11, 1, 'sheet-12345.png', 'image/png', expect.any(Buffer));
+  });
+
+  it('classifies pdf attachments correctly', async () => {
+    const buf = buildTarball([
+      { name: 'score-12345.pdf', content: Buffer.from('%PDF-1.4\n') },
+    ]);
+    const res = await request(app)
+      .post('/api/tunes/import-images')
+      .set('x-sync-code', SYNC)
+      .attach('tarball', buf, 'archive.tar');
+    expect(res.body.imported).toBe(1);
+    expect(db.addTuneImage).toHaveBeenCalledWith(11, 1, 'score-12345.pdf', 'application/pdf', expect.any(Buffer));
+  });
+});

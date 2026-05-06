@@ -6,6 +6,7 @@ const { Readable } = require('stream');
 const tar = require('tar');
 const { parse } = require('csv-parse/sync');
 const db = require('../db/database');
+const requireUser = require('../middleware/requireUser');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const uploadImage = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -17,7 +18,7 @@ async function extractTarEntries(buffer) {
   const files = [];
   const entryPromises = [];
   await new Promise((resolve, reject) => {
-    const parser = new tar.Parse({ gzip: isGzip });
+    const parser = new tar.Parser({ gzip: isGzip });
     parser.on('entry', entry => {
       if (entry.type !== 'File') { entry.resume(); return; }
       const ext = path.extname(entry.path).toLowerCase();
@@ -41,20 +42,6 @@ async function extractTarEntries(buffer) {
   });
   await Promise.all(entryPromises);
   return files;
-}
-
-async function requireUser(req, res, next) {
-  try {
-    // Accept sync code from header (API calls) or query param (image src URLs)
-    const syncCode = req.headers['x-sync-code'] || req.query.code;
-    if (!syncCode) return res.status(401).json({ error: 'Sync code required.' });
-    const user = await db.getUserBySyncCode(syncCode);
-    if (!user) return res.status(401).json({ error: 'Invalid sync code.' });
-    req.user = user;
-    next();
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
 }
 
 router.use(requireUser);
@@ -266,11 +253,18 @@ router.get('/:id/image/:imageId', async (req, res) => {
   try {
     const image = await db.getTuneImageData(req.params.imageId, req.params.id, req.user.id);
     if (!image) return res.status(404).send('Not found.');
+    // Image rows are immutable: ids are SERIAL (never reused) and there is no
+    // UPDATE path, so a strong ETag tied to the row id is enough to revalidate.
+    res.set('ETag', `"img-${req.params.imageId}"`);
+    if (image.created_at) {
+      res.set('Last-Modified', new Date(image.created_at).toUTCString());
+    }
+    res.set('Cache-Control', 'private, max-age=3600, immutable');
+    res.set('Content-Type', image.mime_type);
+    if (req.fresh) return res.status(304).end();
     const buf = Buffer.isBuffer(image.data)
       ? image.data
       : Buffer.from(String(image.data).replace(/^\\x/, ''), 'hex');
-    res.set('Content-Type', image.mime_type);
-    res.set('Cache-Control', 'private, max-age=3600');
     res.send(buf);
   } catch (err) {
     res.status(500).json({ error: err.message });

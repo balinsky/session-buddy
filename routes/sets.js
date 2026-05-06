@@ -3,21 +3,9 @@ const router = express.Router();
 const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const db = require('../db/database');
+const requireUser = require('../middleware/requireUser');
 
 const upload = multer({ storage: multer.memoryStorage() });
-
-async function requireUser(req, res, next) {
-  try {
-    const syncCode = req.headers['x-sync-code'];
-    if (!syncCode) return res.status(401).json({ error: 'Sync code required.' });
-    const user = await db.getUserBySyncCode(syncCode);
-    if (!user) return res.status(401).json({ error: 'Invalid sync code.' });
-    req.user = user;
-    next();
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-}
 
 router.use(requireUser);
 
