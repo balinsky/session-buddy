@@ -208,6 +208,7 @@ function updateFilterBtnStyle(btnId, isActive) {
 // Maps any view to which nav tab should be highlighted
 const NAV_SECTION = {
   tunes: 'tunes', 'tune-detail': 'tunes', 'tune-form': 'tunes', import: 'tunes',
+  'image-viewer': 'tunes',
   sets: 'sets', 'set-detail': 'sets', 'set-form': 'sets', 'set-import': 'sets',
 };
 
@@ -482,8 +483,12 @@ function renderTuneDetail(tune, tuneSets = []) {
   html += `<div class="detail-card" id="tune-image-card">
     <div class="detail-card-title">Images</div>
     ${imgUrl ? `<div class="tune-image-container">
-      <img src="${imgUrl}" class="tune-image" alt="${esc(tune.name)} sheet music" />
-      <button class="btn btn-danger btn-small" id="btn-delete-image">Remove Image</button>
+      <button class="tune-image-thumb" id="btn-view-image" type="button" aria-label="View image">
+        <img src="${imgUrl}" class="tune-image-thumb-img" alt="${esc(tune.name)}"
+             onerror="this.parentNode.innerHTML='<span class=tune-image-broken>&#128444; Image (could not load)</span>'" />
+        <span class="tune-image-thumb-label">&#128269; Tap to view</span>
+      </button>
+      <button class="btn btn-danger btn-small" id="btn-delete-image">Remove</button>
     </div>` : ''}
     <label class="file-drop-zone file-drop-zone--compact" id="tune-image-drop-zone">
       <span id="tune-image-file-label">${tune.has_image ? 'Tap to replace image' : 'Tap to add JPG or PNG'}</span>
@@ -624,14 +629,19 @@ function renderTuneDetail(tune, tuneSets = []) {
     });
   }
 
+  // Image viewer thumbnail
+  document.getElementById('btn-view-image')?.addEventListener('click', () => {
+    goToImageViewer(tune.id, tune.name);
+  });
+
   // Image upload / delete
   const imgFileInput = document.getElementById('tune-image-file-input');
-  const imgDropZone = document.getElementById('tune-image-drop-zone');
   const imgFileLabel = document.getElementById('tune-image-file-label');
   const btnUploadImage = document.getElementById('btn-upload-image');
   const imgStatus = document.getElementById('tune-image-status');
+  // Note: no click listener on the label — the <input> is inside it so the
+  // browser already opens the picker when the label is tapped.
 
-  imgDropZone.addEventListener('click', () => imgFileInput.click());
   imgFileInput.addEventListener('change', () => {
     const f = imgFileInput.files[0];
     imgFileLabel.textContent = f ? f.name : (tune.has_image ? 'Tap to replace image' : 'Tap to add JPG or PNG');
@@ -665,6 +675,20 @@ function renderTuneDetail(tune, tuneSets = []) {
       }
     });
   }
+}
+
+// ===== IMAGE VIEWER =====
+
+function goToImageViewer(tuneId, tuneName) {
+  showView('image-viewer');
+  document.getElementById('header-title').textContent = tuneName || 'Image';
+  const code = encodeURIComponent(localStorage.getItem('syncCode') || '');
+  const url = `/api/tunes/${tuneId}/image?code=${code}&t=${Date.now()}`;
+  document.getElementById('image-viewer-content').innerHTML = `
+    <div class="image-viewer-wrapper">
+      <img src="${url}" class="image-viewer-img" alt="${esc(tuneName)}"
+           onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'hint',textContent:'Could not load image.'}))" />
+    </div>`;
 }
 
 // ===== TUNE FORM =====

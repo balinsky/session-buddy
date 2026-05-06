@@ -254,9 +254,13 @@ router.get('/:id/image', async (req, res) => {
   try {
     const image = await db.getTuneImageData(req.params.id, req.user.id);
     if (!image) return res.status(404).send('No image.');
+    // pg may return BYTEA as a hex string (\x...) or as a Buffer depending on version
+    const buf = Buffer.isBuffer(image.data)
+      ? image.data
+      : Buffer.from(String(image.data).replace(/^\\x/, ''), 'hex');
     res.set('Content-Type', image.mime_type);
     res.set('Cache-Control', 'private, max-age=3600');
-    res.send(image.data);
+    res.send(buf);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
