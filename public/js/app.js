@@ -424,15 +424,17 @@ async function goToTuneDetail(tuneId) {
   document.getElementById('header-title').textContent = 'Tune Detail';
 
   try {
-    const [tune, allSets] = await Promise.all([API.getTune(tuneId), API.getSets()]);
+    const [tune, allSets, images] = await Promise.all([
+      API.getTune(tuneId), API.getSets(), API.getTuneImages(tuneId),
+    ]);
     const tuneSets = allSets.filter(s => s.tunes.some(t => t.id === tuneId));
-    renderTuneDetail(tune, tuneSets);
+    renderTuneDetail(tune, tuneSets, images);
   } catch (e) {
     showError('Could not load tune: ' + e.message);
   }
 }
 
-function renderTuneDetail(tune, tuneSets = []) {
+function renderTuneDetail(tune, tuneSets = [], images = []) {
   const sessionUrl = buildSessionUrl(tune.thesession_id, tune.setting);
 
   let html = `
@@ -476,25 +478,34 @@ function renderTuneDetail(tune, tuneSets = []) {
     html += `</div>`;
   }
 
-  // Image section
-  const imgUrl = tune.has_image
-    ? `/api/tunes/${tune.id}/image?code=${encodeURIComponent(localStorage.getItem('syncCode') || '')}&t=${Date.now()}`
-    : null;
+  // Attachments section (images + PDFs)
+  const syncCode = encodeURIComponent(localStorage.getItem('syncCode') || '');
+  const attachUrl = (imgId) => `/api/tunes/${tune.id}/image/${imgId}?code=${syncCode}&t=${Date.now()}`;
   html += `<div class="detail-card" id="tune-image-card">
-    <div class="detail-card-title">Images</div>
-    ${imgUrl ? `<div class="tune-image-container">
-      <button class="tune-image-thumb" id="btn-view-image" type="button" aria-label="View image">
-        <img src="${imgUrl}" class="tune-image-thumb-img" alt="${esc(tune.name)}"
-             onerror="this.parentNode.innerHTML='<span class=tune-image-broken>&#128444; Image (could not load)</span>'" />
-        <span class="tune-image-thumb-label">&#128269; Tap to view</span>
-      </button>
-      <button class="btn btn-danger btn-small" id="btn-delete-image">Remove</button>
-    </div>` : ''}
+    <div class="detail-card-title">Images &amp; Attachments</div>
+    ${images.length > 0 ? `<div class="tune-image-list">${images.map(img => {
+      const isPdf = img.mime_type === 'application/pdf';
+      return `<div class="tune-image-item">
+        <button class="tune-image-thumb" type="button"
+                data-image-id="${img.id}" data-mime="${esc(img.mime_type)}" data-filename="${esc(img.filename)}">
+          ${isPdf
+            ? `<span class="tune-image-pdf-icon">&#128196;</span>`
+            : `<img src="${attachUrl(img.id)}" class="tune-image-thumb-img" alt="${esc(img.filename)}"
+                   onerror="this.parentNode.innerHTML='<span class=tune-image-broken>&#128444;</span>'" />`
+          }
+          <span class="tune-image-thumb-label">&#128269; View</span>
+        </button>
+        <div class="tune-image-filename">${esc(img.filename)}</div>
+        <button class="btn btn-danger btn-small tune-image-delete-btn"
+                data-image-id="${img.id}">Remove</button>
+      </div>`;
+    }).join('')}</div>` : ''}
     <label class="file-drop-zone file-drop-zone--compact" id="tune-image-drop-zone">
-      <span id="tune-image-file-label">${tune.has_image ? 'Tap to replace image' : 'Tap to add JPG or PNG'}</span>
-      <input id="tune-image-file-input" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" style="display:none" />
+      <span id="tune-image-file-label">Tap to add image or PDF</span>
+      <input id="tune-image-file-input" type="file"
+             accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" style="display:none" />
     </label>
-    <button class="btn btn-primary btn-small hidden" id="btn-upload-image" style="margin-top:8px;">Upload Image</button>
+    <button class="btn btn-primary btn-small hidden" id="btn-upload-image" style="margin-top:8px;">Upload</button>
     <div id="tune-image-status" class="hint" style="margin-top:6px;min-height:1em;"></div>
   </div>`;
 
@@ -629,22 +640,37 @@ function renderTuneDetail(tune, tuneSets = []) {
     });
   }
 
-  // Image viewer thumbnail
-  document.getElementById('btn-view-image')?.addEventListener('click', () => {
-    goToImageViewer(tune.id, tune.name);
+  // Attachment thumbnails — open viewer
+  container.querySelectorAll('.tune-image-thumb').forEach(btn => {
+    btn.addEventListener('click', () => {
+      goToImageViewer(tune.id, Number(btn.dataset.imageId), btn.dataset.mime, btn.dataset.filename);
+    });
   });
 
-  // Image upload / delete
+  // Attachment delete buttons
+  container.querySelectorAll('.tune-image-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Remove this attachment?')) return;
+      try {
+        await API.deleteTuneImage(tune.id, Number(btn.dataset.imageId));
+        goToTuneDetail(tune.id);
+      } catch (err) {
+        showError('Could not remove: ' + err.message);
+      }
+    });
+  });
+
+  // Upload
   const imgFileInput = document.getElementById('tune-image-file-input');
   const imgFileLabel = document.getElementById('tune-image-file-label');
   const btnUploadImage = document.getElementById('btn-upload-image');
   const imgStatus = document.getElementById('tune-image-status');
-  // Note: no click listener on the label — the <input> is inside it so the
-  // browser already opens the picker when the label is tapped.
+  // No click listener on the label — the <input> is inside it so the browser
+  // already opens the picker when the label is tapped.
 
   imgFileInput.addEventListener('change', () => {
     const f = imgFileInput.files[0];
-    imgFileLabel.textContent = f ? f.name : (tune.has_image ? 'Tap to replace image' : 'Tap to add JPG or PNG');
+    imgFileLabel.textContent = f ? f.name : 'Tap to add image or PDF';
     btnUploadImage.classList.toggle('hidden', !f);
     imgStatus.textContent = '';
   });
@@ -662,33 +688,41 @@ function renderTuneDetail(tune, tuneSets = []) {
       btnUploadImage.disabled = false;
     }
   });
-
-  const btnDeleteImage = document.getElementById('btn-delete-image');
-  if (btnDeleteImage) {
-    btnDeleteImage.addEventListener('click', async () => {
-      if (!confirm('Remove this image?')) return;
-      try {
-        await API.deleteTuneImage(tune.id);
-        goToTuneDetail(tune.id);
-      } catch (err) {
-        showError('Could not remove image: ' + err.message);
-      }
-    });
-  }
 }
 
 // ===== IMAGE VIEWER =====
 
-function goToImageViewer(tuneId, tuneName) {
+function goToImageViewer(tuneId, imageId, mimeType, filename) {
   showView('image-viewer');
-  document.getElementById('header-title').textContent = tuneName || 'Image';
+  document.getElementById('header-title').textContent = filename || 'Attachment';
   const code = encodeURIComponent(localStorage.getItem('syncCode') || '');
-  const url = `/api/tunes/${tuneId}/image?code=${code}&t=${Date.now()}`;
+  const url = `/api/tunes/${tuneId}/image/${imageId}?code=${code}&t=${Date.now()}`;
+
+  const mediaHtml = mimeType === 'application/pdf'
+    ? `<embed src="${url}" type="application/pdf" class="image-viewer-pdf" />
+       <p class="hint" style="text-align:center;margin-top:8px;">
+         <a href="${url}" target="_blank" rel="noopener">Open in new tab &#8599;</a>
+       </p>`
+    : `<img src="${url}" class="image-viewer-img" alt="${esc(filename)}"
+           onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'hint',textContent:'Could not load image.'}))" />`;
+
   document.getElementById('image-viewer-content').innerHTML = `
-    <div class="image-viewer-wrapper">
-      <img src="${url}" class="image-viewer-img" alt="${esc(tuneName)}"
-           onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'hint',textContent:'Could not load image.'}))" />
+    <div class="image-viewer-wrapper">${mediaHtml}</div>
+    <div class="image-viewer-actions">
+      <button class="btn btn-danger btn-small" id="btn-viewer-remove">Remove</button>
     </div>`;
+
+  document.getElementById('btn-viewer-remove').addEventListener('click', async () => {
+    if (!confirm('Remove this attachment?')) return;
+    try {
+      await API.deleteTuneImage(tuneId, imageId);
+      // Clear image-viewer from back stack then re-render tune detail
+      state.backStack = state.backStack.filter(v => v !== 'image-viewer');
+      goToTuneDetail(tuneId);
+    } catch (err) {
+      showError('Could not remove: ' + err.message);
+    }
+  });
 }
 
 // ===== TUNE FORM =====

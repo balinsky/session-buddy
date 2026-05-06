@@ -68,7 +68,7 @@ async function init() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tune_images (
       id SERIAL PRIMARY KEY,
-      tune_id INTEGER NOT NULL UNIQUE REFERENCES tunes(id) ON DELETE CASCADE,
+      tune_id INTEGER NOT NULL REFERENCES tunes(id) ON DELETE CASCADE,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       filename TEXT NOT NULL,
       mime_type TEXT NOT NULL,
@@ -76,6 +76,8 @@ async function init() {
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  // Drop the unique constraint that prevented multiple attachments per tune
+  await pool.query(`ALTER TABLE tune_images DROP CONSTRAINT IF EXISTS tune_images_tune_id_key`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tune_images_tune_id ON tune_images(tune_id)`);
 }
 
@@ -103,9 +105,9 @@ async function getTunesByUser(userId) {
 
 async function getTuneById(id, userId) {
   const { rows } = await pool.query(
-    `SELECT t.*, (ti.id IS NOT NULL) AS has_image
+    `SELECT t.*,
+      EXISTS(SELECT 1 FROM tune_images WHERE tune_id = t.id) AS has_image
      FROM tunes t
-     LEFT JOIN tune_images ti ON ti.tune_id = t.id
      WHERE t.id = $1 AND t.user_id = $2`,
     [id, userId]
   );
@@ -331,27 +333,38 @@ async function practiceSet(id, userId, date) {
   }
 }
 
-async function setTuneImage(tuneId, userId, filename, mimeType, data) {
-  await pool.query(
+async function addTuneImage(tuneId, userId, filename, mimeType, data) {
+  const { rows } = await pool.query(
     `INSERT INTO tune_images (tune_id, user_id, filename, mime_type, data)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (tune_id) DO UPDATE SET filename=$3, mime_type=$4, data=$5, created_at=CURRENT_TIMESTAMP`,
+     VALUES ($1, $2, $3, $4, $5) RETURNING id, filename, mime_type, created_at`,
     [tuneId, userId, filename, mimeType, data]
   );
+  return rows[0];
 }
 
-async function getTuneImageData(tuneId, userId) {
+async function getTuneImageList(tuneId, userId) {
   const { rows } = await pool.query(
-    'SELECT filename, mime_type, data FROM tune_images WHERE tune_id = $1 AND user_id = $2',
+    `SELECT id, filename, mime_type, created_at
+     FROM tune_images WHERE tune_id = $1 AND user_id = $2
+     ORDER BY created_at ASC`,
     [tuneId, userId]
+  );
+  return rows;
+}
+
+async function getTuneImageData(imageId, tuneId, userId) {
+  const { rows } = await pool.query(
+    `SELECT filename, mime_type, data
+     FROM tune_images WHERE id = $1 AND tune_id = $2 AND user_id = $3`,
+    [imageId, tuneId, userId]
   );
   return rows[0] || null;
 }
 
-async function deleteTuneImage(tuneId, userId) {
+async function deleteTuneImage(imageId, tuneId, userId) {
   await pool.query(
-    'DELETE FROM tune_images WHERE tune_id = $1 AND user_id = $2',
-    [tuneId, userId]
+    'DELETE FROM tune_images WHERE id = $1 AND tune_id = $2 AND user_id = $3',
+    [imageId, tuneId, userId]
   );
 }
 
@@ -418,7 +431,7 @@ module.exports = {
   init,
   getUserBySyncCode, createUser,
   getTunesByUser, getTuneById, createTune, updateTune, deleteTune, insertManyTunes,
-  setTuneImage, getTuneImageData, deleteTuneImage,
+  addTuneImage, getTuneImageList, getTuneImageData, deleteTuneImage,
   mergeTunes,
   getSetsByUser, getSetById, createSet, updateSet, deleteSet, patchSet, practiceSet,
 };

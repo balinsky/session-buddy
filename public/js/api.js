@@ -52,12 +52,13 @@ const API = (() => {
     // Tunes (partial update)
     patchTune: (id, data) => request('PATCH', `/api/tunes/${id}`, data),
     mergeTune: (primaryId, mergeIds) => request('POST', `/api/tunes/${primaryId}/merge`, { mergeIds }),
+    getTuneImages: (id) => request('GET', `/api/tunes/${id}/images`),
     uploadTuneImage: (id, file) => {
       const form = new FormData();
       form.append('image', file);
       return request('POST', `/api/tunes/${id}/image`, form, true);
     },
-    deleteTuneImage: (id) => request('DELETE', `/api/tunes/${id}/image`),
+    deleteTuneImage: (tuneId, imageId) => request('DELETE', `/api/tunes/${tuneId}/image/${imageId}`),
     importImages: (file) => {
       const form = new FormData();
       form.append('tarball', file);

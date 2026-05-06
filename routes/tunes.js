@@ -22,7 +22,8 @@ async function extractTarEntries(buffer) {
       if (entry.type !== 'File') { entry.resume(); return; }
       const ext = path.extname(entry.path).toLowerCase();
       const mimeType = (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg'
-                     : ext === '.png' ? 'image/png' : null;
+                     : ext === '.png' ? 'image/png'
+                     : ext === '.pdf' ? 'application/pdf' : null;
       if (!mimeType) { entry.resume(); return; }
       const chunks = [];
       const p = new Promise(res => {
@@ -248,13 +249,23 @@ router.post('/import', upload.single('csv'), async (req, res) => {
   }
 });
 
-// --- Image routes ---
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
 
-router.get('/:id/image', async (req, res) => {
+// --- Attachment routes ---
+
+router.get('/:id/images', async (req, res) => {
   try {
-    const image = await db.getTuneImageData(req.params.id, req.user.id);
-    if (!image) return res.status(404).send('No image.');
-    // pg may return BYTEA as a hex string (\x...) or as a Buffer depending on version
+    const list = await db.getTuneImageList(req.params.id, req.user.id);
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:id/image/:imageId', async (req, res) => {
+  try {
+    const image = await db.getTuneImageData(req.params.imageId, req.params.id, req.user.id);
+    if (!image) return res.status(404).send('Not found.');
     const buf = Buffer.isBuffer(image.data)
       ? image.data
       : Buffer.from(String(image.data).replace(/^\\x/, ''), 'hex');
@@ -268,23 +279,23 @@ router.get('/:id/image', async (req, res) => {
 
 router.post('/:id/image', uploadImage.single('image'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'Image file required.' });
+    if (!req.file) return res.status(400).json({ error: 'File required.' });
     const { mimetype, originalname, buffer } = req.file;
-    if (!['image/jpeg', 'image/png'].includes(mimetype)) {
-      return res.status(400).json({ error: 'Only JPEG and PNG images are supported.' });
+    if (!ALLOWED_MIME_TYPES.includes(mimetype)) {
+      return res.status(400).json({ error: 'Only JPEG, PNG, and PDF files are supported.' });
     }
     const tune = await db.getTuneById(req.params.id, req.user.id);
     if (!tune) return res.status(404).json({ error: 'Tune not found.' });
-    await db.setTuneImage(tune.id, req.user.id, originalname, mimetype, buffer);
-    res.json({ ok: true });
+    const image = await db.addTuneImage(tune.id, req.user.id, originalname, mimetype, buffer);
+    res.json(image);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.delete('/:id/image', async (req, res) => {
+router.delete('/:id/image/:imageId', async (req, res) => {
   try {
-    await db.deleteTuneImage(req.params.id, req.user.id);
+    await db.deleteTuneImage(req.params.imageId, req.params.id, req.user.id);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -312,14 +323,11 @@ router.post('/import-images', uploadTarball.single('tarball'), async (req, res) 
     const unmatched = [];
 
     for (const { filename, buffer, mimeType } of files) {
-      // Extract all digit sequences from the filename and check against known Thesession IDs
       const basename = path.basename(filename, path.extname(filename));
       const digitRuns = basename.match(/\d+/g) || [];
       const matchedTune = digitRuns.map(d => sidToTune[d]).find(Boolean);
-
       if (!matchedTune) { unmatched.push(filename); continue; }
-
-      await db.setTuneImage(matchedTune.id, req.user.id, filename, mimeType, buffer);
+      await db.addTuneImage(matchedTune.id, req.user.id, filename, mimeType, buffer);
       imported++;
     }
 
