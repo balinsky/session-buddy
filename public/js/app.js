@@ -66,6 +66,7 @@ const state = {
     favoriteOnly: false,
     types: [],
   },
+  duplicateGroups: [],
 };
 
 // ===== UTILITIES =====
@@ -474,6 +475,24 @@ function renderTuneDetail(tune, tuneSets = []) {
     html += `</div>`;
   }
 
+  // Image section
+  const imgUrl = tune.has_image
+    ? `/api/tunes/${tune.id}/image?code=${encodeURIComponent(localStorage.getItem('syncCode') || '')}&t=${Date.now()}`
+    : null;
+  html += `<div class="detail-card" id="tune-image-card">
+    <div class="detail-card-title">Images</div>
+    ${imgUrl ? `<div class="tune-image-container">
+      <img src="${imgUrl}" class="tune-image" alt="${esc(tune.name)} sheet music" />
+      <button class="btn btn-danger btn-small" id="btn-delete-image">Remove Image</button>
+    </div>` : ''}
+    <label class="file-drop-zone file-drop-zone--compact" id="tune-image-drop-zone">
+      <span id="tune-image-file-label">${tune.has_image ? 'Tap to replace image' : 'Tap to add JPG or PNG'}</span>
+      <input id="tune-image-file-input" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png" style="display:none" />
+    </label>
+    <button class="btn btn-primary btn-small hidden" id="btn-upload-image" style="margin-top:8px;">Upload Image</button>
+    <div id="tune-image-status" class="hint" style="margin-top:6px;min-height:1em;"></div>
+  </div>`;
+
   // Always-visible fields
   const visibleFields = [];
   if (tune.instrument) visibleFields.push(['Instrument', esc(tune.instrument)]);
@@ -602,6 +621,48 @@ function renderTuneDetail(tune, tuneSets = []) {
     showMoreBtn.addEventListener('click', () => {
       document.getElementById('hidden-fields-card').classList.remove('hidden');
       showMoreBtn.classList.add('hidden');
+    });
+  }
+
+  // Image upload / delete
+  const imgFileInput = document.getElementById('tune-image-file-input');
+  const imgDropZone = document.getElementById('tune-image-drop-zone');
+  const imgFileLabel = document.getElementById('tune-image-file-label');
+  const btnUploadImage = document.getElementById('btn-upload-image');
+  const imgStatus = document.getElementById('tune-image-status');
+
+  imgDropZone.addEventListener('click', () => imgFileInput.click());
+  imgFileInput.addEventListener('change', () => {
+    const f = imgFileInput.files[0];
+    imgFileLabel.textContent = f ? f.name : (tune.has_image ? 'Tap to replace image' : 'Tap to add JPG or PNG');
+    btnUploadImage.classList.toggle('hidden', !f);
+    imgStatus.textContent = '';
+  });
+
+  btnUploadImage.addEventListener('click', async () => {
+    const f = imgFileInput.files[0];
+    if (!f) return;
+    btnUploadImage.disabled = true;
+    imgStatus.textContent = 'Uploading…';
+    try {
+      await API.uploadTuneImage(tune.id, f);
+      goToTuneDetail(tune.id);
+    } catch (err) {
+      imgStatus.textContent = 'Upload failed: ' + err.message;
+      btnUploadImage.disabled = false;
+    }
+  });
+
+  const btnDeleteImage = document.getElementById('btn-delete-image');
+  if (btnDeleteImage) {
+    btnDeleteImage.addEventListener('click', async () => {
+      if (!confirm('Remove this image?')) return;
+      try {
+        await API.deleteTuneImage(tune.id);
+        goToTuneDetail(tune.id);
+      } catch (err) {
+        showError('Could not remove image: ' + err.message);
+      }
     });
   }
 }
@@ -1240,24 +1301,67 @@ function checkTuneDuplicates() {
     }
   }
 
+  state.duplicateGroups = groups;
   const resultsEl = document.getElementById('duplicate-check-results');
+
   if (groups.length === 0) {
     resultsEl.innerHTML = '<p class="hint">No duplicates found.</p>';
-  } else {
-    let html = `<p class="hint">${groups.length} duplicate group${groups.length !== 1 ? 's' : ''} found:</p>`;
-    groups.forEach(g => {
-      html += `<div class="duplicate-group"><div class="duplicate-reason">${esc(g.reason)}</div>`;
-      g.tunes.forEach(t => {
-        const meta = [t.type, t.key, t.learning_status].filter(Boolean).join(' · ');
-        html += `<div class="duplicate-tune-link" data-id="${t.id}">${esc(t.name)}${meta ? ' — ' + esc(meta) : ''} &#8599;</div>`;
-      });
-      html += `</div>`;
-    });
-    resultsEl.innerHTML = html;
-    resultsEl.querySelectorAll('.duplicate-tune-link').forEach(el => {
-      el.addEventListener('click', () => goToTuneDetail(Number(el.dataset.id)));
-    });
+    resultsEl.classList.remove('hidden');
+    return;
   }
+
+  let html = `<p class="hint">${groups.length} duplicate group${groups.length !== 1 ? 's' : ''} found. Select which tune to keep, then merge.</p>`;
+  groups.forEach((g, gIdx) => {
+    html += `<div class="duplicate-group">`;
+    html += `<div class="duplicate-reason">${esc(g.reason)}</div>`;
+    g.tunes.forEach((t, tIdx) => {
+      const meta = [t.type, t.key, t.learning_status, `count: ${t.count || 0}`].filter(Boolean).join(' · ');
+      html += `<label class="duplicate-tune-radio">
+        <input type="radio" name="keep-${gIdx}" value="${t.id}"${tIdx === 0 ? ' checked' : ''}>
+        <span class="duplicate-tune-radio-text">${esc(t.name)}${meta ? ' — ' + esc(meta) : ''}</span>
+        <span class="duplicate-tune-link" data-id="${t.id}" title="View tune">&#8599;</span>
+      </label>`;
+    });
+    html += `<div class="duplicate-merge-actions">
+      <button class="btn btn-primary btn-merge-group" data-group="${gIdx}">Merge</button>
+      <span class="hint">Merged tune gets the sum of counts and highest learning status.</span>
+    </div>`;
+    html += `</div>`;
+  });
+  resultsEl.innerHTML = html;
+
+  resultsEl.querySelectorAll('.duplicate-tune-link').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault();
+      goToTuneDetail(Number(el.dataset.id));
+    });
+  });
+
+  resultsEl.querySelectorAll('.btn-merge-group').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const gIdx = Number(btn.dataset.group);
+      const g = state.duplicateGroups[gIdx];
+      const radio = resultsEl.querySelector(`input[name="keep-${gIdx}"]:checked`);
+      const primaryId = Number(radio.value);
+      const mergeIds = g.tunes.map(t => t.id).filter(id => id !== primaryId);
+      const primaryName = g.tunes.find(t => t.id === primaryId)?.name || '';
+
+      if (!confirm(`Merge ${g.tunes.length} tunes into "${primaryName}"?\n\nThe other tune(s) will be deleted. This cannot be undone.`)) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Merging…';
+      try {
+        await API.mergeTune(primaryId, mergeIds);
+        state.tunes = await API.getTunes();
+        checkTuneDuplicates();
+      } catch (err) {
+        showError('Merge failed: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Merge';
+      }
+    });
+  });
+
   resultsEl.classList.remove('hidden');
 }
 
@@ -1599,6 +1703,45 @@ function init() {
   document.getElementById('btn-check-duplicates').addEventListener('click', async () => {
     if (state.tunes.length === 0) state.tunes = await API.getTunes();
     checkTuneDuplicates();
+  });
+
+  // Bulk image import (tarball)
+  const imageTarballInput = document.getElementById('image-tarball-input');
+  const imageTarballZone = document.getElementById('image-tarball-drop-zone');
+  const imageTarballLabel = document.getElementById('image-tarball-file-label');
+  const btnRunImageImport = document.getElementById('btn-run-image-import');
+  const imageImportStatus = document.getElementById('image-import-status');
+
+  imageTarballZone.addEventListener('click', () => imageTarballInput.click());
+  imageTarballInput.addEventListener('change', () => {
+    const f = imageTarballInput.files[0];
+    imageTarballLabel.textContent = f ? f.name : 'Tap to choose a .tar or .tar.gz file';
+    btnRunImageImport.disabled = !f;
+    imageImportStatus.textContent = '';
+    imageImportStatus.className = 'import-status';
+  });
+
+  btnRunImageImport.addEventListener('click', async () => {
+    const file = imageTarballInput.files[0];
+    if (!file) return;
+    btnRunImageImport.disabled = true;
+    imageImportStatus.textContent = 'Importing…';
+    imageImportStatus.className = 'import-status';
+    try {
+      const result = await API.importImages(file);
+      const n = result.imported;
+      let msg = `${n} image${n !== 1 ? 's' : ''} imported.`;
+      if (result.unmatched.length > 0) {
+        msg += ` ${result.unmatched.length} file${result.unmatched.length !== 1 ? 's' : ''} skipped — no matching Thesession ID found.`;
+      }
+      imageImportStatus.textContent = msg;
+      imageImportStatus.className = n > 0 ? 'import-status success' : 'import-status error';
+      btnRunImageImport.disabled = false;
+    } catch (err) {
+      imageImportStatus.textContent = 'Import failed: ' + err.message;
+      imageImportStatus.className = 'import-status error';
+      btnRunImageImport.disabled = false;
+    }
   });
 
   // Sync modal

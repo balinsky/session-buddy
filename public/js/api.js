@@ -51,6 +51,18 @@ const API = (() => {
 
     // Tunes (partial update)
     patchTune: (id, data) => request('PATCH', `/api/tunes/${id}`, data),
+    mergeTune: (primaryId, mergeIds) => request('POST', `/api/tunes/${primaryId}/merge`, { mergeIds }),
+    uploadTuneImage: (id, file) => {
+      const form = new FormData();
+      form.append('image', file);
+      return request('POST', `/api/tunes/${id}/image`, form, true);
+    },
+    deleteTuneImage: (id) => request('DELETE', `/api/tunes/${id}/image`),
+    importImages: (file) => {
+      const form = new FormData();
+      form.append('tarball', file);
+      return request('POST', '/api/tunes/import-images', form, true);
+    },
 
     // Sets
     getSets: () => request('GET', '/api/sets'),

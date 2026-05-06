@@ -351,6 +351,19 @@
           <button id="btn-check-duplicates" class="btn btn-outline btn-small">Check Collection for Duplicates</button>
           <div id="duplicate-check-results" class="hidden" style="margin-top:12px;"></div>
         </div>
+        <div class="import-notes" style="margin-top:12px;">
+          <strong>Bulk Image Import</strong>
+          <br/><br/>
+          <p class="hint" style="margin-bottom:12px;">Upload a <code>.tar</code> or <code>.tar.gz</code> archive of JPG/PNG images. Each filename must include the Thesession ID of the tune it belongs to — e.g. <code>12345_the_morning_dew.jpg</code>.</p>
+          <div class="import-area">
+            <label class="file-drop-zone" id="image-tarball-drop-zone">
+              <span id="image-tarball-file-label">Tap to choose a .tar or .tar.gz file</span>
+              <input id="image-tarball-input" type="file" accept=".tar,.tar.gz,.tgz,application/x-tar,application/gzip" style="display:none" />
+            </label>
+            <button id="btn-run-image-import" class="btn btn-primary btn-large" disabled>Import Images</button>
+            <div id="image-import-status" class="import-status"></div>
+          </div>
+        </div>
       </div>
 
       <!-- TUNE FILTER MODAL -->

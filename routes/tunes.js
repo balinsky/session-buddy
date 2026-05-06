@@ -1,14 +1,51 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const path = require('path');
+const { Readable } = require('stream');
+const tar = require('tar');
 const { parse } = require('csv-parse/sync');
 const db = require('../db/database');
 
 const upload = multer({ storage: multer.memoryStorage() });
+const uploadImage = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const uploadTarball = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+
+// Extracts image files from a tar or tar.gz buffer
+async function extractTarEntries(buffer) {
+  const isGzip = buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
+  const files = [];
+  const entryPromises = [];
+  await new Promise((resolve, reject) => {
+    const parser = new tar.Parse({ gzip: isGzip });
+    parser.on('entry', entry => {
+      if (entry.type !== 'File') { entry.resume(); return; }
+      const ext = path.extname(entry.path).toLowerCase();
+      const mimeType = (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg'
+                     : ext === '.png' ? 'image/png' : null;
+      if (!mimeType) { entry.resume(); return; }
+      const chunks = [];
+      const p = new Promise(res => {
+        entry.on('data', c => chunks.push(c));
+        entry.on('end', () => {
+          files.push({ filename: path.basename(entry.path), buffer: Buffer.concat(chunks), mimeType });
+          res();
+        });
+      });
+      entryPromises.push(p);
+    });
+    parser.on('finish', resolve);
+    parser.on('error', reject);
+    Readable.from(buffer).pipe(parser);
+  });
+  await Promise.all(entryPromises);
+  return files;
+}
 
 async function requireUser(req, res, next) {
   try {
-    const syncCode = req.headers['x-sync-code'];
+    // Accept sync code from header (API calls) or query param (image src URLs)
+    const syncCode = req.headers['x-sync-code'] || req.query.code;
     if (!syncCode) return res.status(401).json({ error: 'Sync code required.' });
     const user = await db.getUserBySyncCode(syncCode);
     if (!user) return res.status(401).json({ error: 'Invalid sync code.' });
@@ -66,6 +103,21 @@ router.patch('/:id', async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Tune not found.' });
     const tune = await db.updateTune(req.params.id, req.user.id, { ...existing, ...req.body });
     res.json(tune);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/merge', async (req, res) => {
+  try {
+    const primaryId = Number(req.params.id);
+    const { mergeIds } = req.body;
+    if (!Array.isArray(mergeIds) || mergeIds.length === 0) {
+      return res.status(400).json({ error: 'mergeIds array is required.' });
+    }
+    const result = await db.mergeTunes(primaryId, mergeIds.map(Number), req.user.id);
+    if (!result) return res.status(404).json({ error: 'One or more tunes not found.' });
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -193,6 +245,83 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Database error during import: ' + err.message });
+  }
+});
+
+// --- Image routes ---
+
+router.get('/:id/image', async (req, res) => {
+  try {
+    const image = await db.getTuneImageData(req.params.id, req.user.id);
+    if (!image) return res.status(404).send('No image.');
+    res.set('Content-Type', image.mime_type);
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.send(image.data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/image', uploadImage.single('image'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Image file required.' });
+    const { mimetype, originalname, buffer } = req.file;
+    if (!['image/jpeg', 'image/png'].includes(mimetype)) {
+      return res.status(400).json({ error: 'Only JPEG and PNG images are supported.' });
+    }
+    const tune = await db.getTuneById(req.params.id, req.user.id);
+    if (!tune) return res.status(404).json({ error: 'Tune not found.' });
+    await db.setTuneImage(tune.id, req.user.id, originalname, mimetype, buffer);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/image', async (req, res) => {
+  try {
+    await db.deleteTuneImage(req.params.id, req.user.id);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/import-images', uploadTarball.single('tarball'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Tarball file required.' });
+
+    const allTunes = await db.getTunesByUser(req.user.id);
+    const sidToTune = {};
+    for (const tune of allTunes) {
+      if (tune.thesession_id) sidToTune[tune.thesession_id.trim()] = tune;
+    }
+
+    let files;
+    try {
+      files = await extractTarEntries(req.file.buffer);
+    } catch (err) {
+      return res.status(400).json({ error: 'Could not parse archive: ' + err.message });
+    }
+
+    let imported = 0;
+    const unmatched = [];
+
+    for (const { filename, buffer, mimeType } of files) {
+      // Extract all digit sequences from the filename and check against known Thesession IDs
+      const basename = path.basename(filename, path.extname(filename));
+      const digitRuns = basename.match(/\d+/g) || [];
+      const matchedTune = digitRuns.map(d => sidToTune[d]).find(Boolean);
+
+      if (!matchedTune) { unmatched.push(filename); continue; }
+
+      await db.setTuneImage(matchedTune.id, req.user.id, filename, mimeType, buffer);
+      imported++;
+    }
+
+    res.json({ imported, unmatched });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

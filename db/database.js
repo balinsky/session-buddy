@@ -65,6 +65,18 @@ async function init() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_sets_user_id ON sets(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_set_tunes_set_id ON set_tunes(set_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_set_tunes_tune_id ON set_tunes(tune_id)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tune_images (
+      id SERIAL PRIMARY KEY,
+      tune_id INTEGER NOT NULL UNIQUE REFERENCES tunes(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      data BYTEA NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tune_images_tune_id ON tune_images(tune_id)`);
 }
 
 // --- Users ---
@@ -91,7 +103,10 @@ async function getTunesByUser(userId) {
 
 async function getTuneById(id, userId) {
   const { rows } = await pool.query(
-    'SELECT * FROM tunes WHERE id = $1 AND user_id = $2',
+    `SELECT t.*, (ti.id IS NOT NULL) AS has_image
+     FROM tunes t
+     LEFT JOIN tune_images ti ON ti.tune_id = t.id
+     WHERE t.id = $1 AND t.user_id = $2`,
     [id, userId]
   );
   return rows[0] || null;
@@ -316,9 +331,94 @@ async function practiceSet(id, userId, date) {
   }
 }
 
+async function setTuneImage(tuneId, userId, filename, mimeType, data) {
+  await pool.query(
+    `INSERT INTO tune_images (tune_id, user_id, filename, mime_type, data)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (tune_id) DO UPDATE SET filename=$3, mime_type=$4, data=$5, created_at=CURRENT_TIMESTAMP`,
+    [tuneId, userId, filename, mimeType, data]
+  );
+}
+
+async function getTuneImageData(tuneId, userId) {
+  const { rows } = await pool.query(
+    'SELECT filename, mime_type, data FROM tune_images WHERE tune_id = $1 AND user_id = $2',
+    [tuneId, userId]
+  );
+  return rows[0] || null;
+}
+
+async function deleteTuneImage(tuneId, userId) {
+  await pool.query(
+    'DELETE FROM tune_images WHERE tune_id = $1 AND user_id = $2',
+    [tuneId, userId]
+  );
+}
+
+async function mergeTunes(primaryId, mergeIds, userId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const allIds = [primaryId, ...mergeIds];
+    const { rows: tunes } = await client.query(
+      'SELECT * FROM tunes WHERE id = ANY($1::int[]) AND user_id = $2',
+      [allIds, userId]
+    );
+    if (tunes.length !== allIds.length) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    const STATUS_RANK = { 'Memorized': 2, 'Learning': 1, 'Not Learned': 0 };
+    const bestStatus = tunes.reduce((best, t) => {
+      return (STATUS_RANK[t.learning_status] || 0) > (STATUS_RANK[best] || 0)
+        ? t.learning_status : best;
+    }, tunes.find(t => t.id === primaryId).learning_status);
+    const totalCount = tunes.reduce((sum, t) => sum + (parseInt(t.count) || 0), 0);
+    await client.query(
+      'UPDATE tunes SET count = $1, learning_status = $2 WHERE id = $3 AND user_id = $4',
+      [totalCount, bestStatus, primaryId, userId]
+    );
+    for (const mergeId of mergeIds) {
+      const { rows: setRows } = await client.query(
+        'SELECT set_id FROM set_tunes WHERE tune_id = $1',
+        [mergeId]
+      );
+      for (const { set_id } of setRows) {
+        const { rows: already } = await client.query(
+          'SELECT id FROM set_tunes WHERE set_id = $1 AND tune_id = $2',
+          [set_id, primaryId]
+        );
+        if (already.length === 0) {
+          // Primary not yet in this set — redirect the row to point to primary
+          await client.query(
+            'UPDATE set_tunes SET tune_id = $1 WHERE set_id = $2 AND tune_id = $3',
+            [primaryId, set_id, mergeId]
+          );
+        } else {
+          // Primary already in set — just remove the duplicate
+          await client.query(
+            'DELETE FROM set_tunes WHERE set_id = $1 AND tune_id = $2',
+            [set_id, mergeId]
+          );
+        }
+      }
+      await client.query('DELETE FROM tunes WHERE id = $1 AND user_id = $2', [mergeId, userId]);
+    }
+    await client.query('COMMIT');
+    return getTuneById(primaryId, userId);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   init,
   getUserBySyncCode, createUser,
   getTunesByUser, getTuneById, createTune, updateTune, deleteTune, insertManyTunes,
+  setTuneImage, getTuneImageData, deleteTuneImage,
+  mergeTunes,
   getSetsByUser, getSetById, createSet, updateSet, deleteSet, patchSet, practiceSet,
 };
