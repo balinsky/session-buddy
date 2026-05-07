@@ -380,6 +380,121 @@ async function deleteTuneImage(imageId, tuneId, userId) {
   );
 }
 
+// Higher rank wins when computing a tune's "best" status across instruments.
+const STATUS_RANK = { 'Memorized': 2, 'Learning': 1, 'Not Learned': 0 };
+
+// --- Per-instrument learning status (design/PerInstrumentStatus.md, Phase 2) ---
+
+async function getTuneInstrumentStatuses(tuneId, userId) {
+  const { rows } = await pool.query(
+    `SELECT tis.instrument, tis.status
+     FROM tune_instrument_status tis
+     JOIN tunes t ON t.id = tis.tune_id
+     WHERE tis.tune_id = $1 AND t.user_id = $2
+     ORDER BY tis.instrument`,
+    [tuneId, userId]
+  );
+  return rows;
+}
+
+// Sets tunes.learning_status to the best-of the per-instrument rows. Keeps
+// the legacy column consistent with per-instrument data so the (still-legacy)
+// list view stays accurate until Phase 3 cuts it over. If a tune has no
+// per-instrument rows, the legacy column is left alone.
+async function recomputeTuneLearningStatus(tuneId, userId) {
+  const { rows } = await pool.query(
+    `SELECT status FROM tune_instrument_status WHERE tune_id = $1`,
+    [tuneId]
+  );
+  if (rows.length === 0) return;
+  const best = rows.reduce(
+    (b, r) => (STATUS_RANK[r.status] ?? 0) > (STATUS_RANK[b] ?? 0) ? r.status : b,
+    'Not Learned'
+  );
+  await pool.query(
+    `UPDATE tunes SET learning_status = $1 WHERE id = $2 AND user_id = $3`,
+    [best, tuneId, userId]
+  );
+}
+
+async function setTuneInstrumentStatus(tuneId, userId, instrument, status) {
+  const { rowCount } = await pool.query(
+    `SELECT 1 FROM tunes WHERE id = $1 AND user_id = $2`,
+    [tuneId, userId]
+  );
+  if (rowCount === 0) return null;
+  await pool.query(
+    `INSERT INTO tune_instrument_status (tune_id, instrument, status)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (tune_id, instrument) DO UPDATE SET status = EXCLUDED.status`,
+    [tuneId, instrument, status]
+  );
+  await recomputeTuneLearningStatus(tuneId, userId);
+  return getTuneInstrumentStatuses(tuneId, userId);
+}
+
+async function deleteTuneInstrumentStatus(tuneId, userId, instrument) {
+  const { rowCount } = await pool.query(
+    `SELECT 1 FROM tunes WHERE id = $1 AND user_id = $2`,
+    [tuneId, userId]
+  );
+  if (rowCount === 0) return null;
+  await pool.query(
+    `DELETE FROM tune_instrument_status WHERE tune_id = $1 AND instrument = $2`,
+    [tuneId, instrument]
+  );
+  await recomputeTuneLearningStatus(tuneId, userId);
+  return getTuneInstrumentStatuses(tuneId, userId);
+}
+
+// Reconciles per-instrument rows with the tune's instrument list (a
+// comma-separated string from the form). Adds rows for newly-checked
+// instruments and deletes rows for unchecked ones; existing rows keep their
+// status. Default for newly-added instruments: if the tune has no
+// per-instrument rows yet, adopt the tune's legacy learning_status (so the
+// status survives migration); otherwise default to 'Not Learned'.
+async function syncTuneInstrumentRows(tuneId, userId, instrumentString) {
+  const instruments = (instrumentString || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const desired = new Set(instruments);
+
+  const { rows: existingRows } = await pool.query(
+    `SELECT instrument FROM tune_instrument_status WHERE tune_id = $1`,
+    [tuneId]
+  );
+  const existing = new Set(existingRows.map(r => r.instrument));
+
+  let defaultStatus = 'Not Learned';
+  if (existing.size === 0 && desired.size > 0) {
+    const { rows: tuneRows } = await pool.query(
+      `SELECT learning_status FROM tunes WHERE id = $1 AND user_id = $2`,
+      [tuneId, userId]
+    );
+    if (tuneRows[0]?.learning_status) defaultStatus = tuneRows[0].learning_status;
+  }
+
+  for (const inst of desired) {
+    if (!existing.has(inst)) {
+      await pool.query(
+        `INSERT INTO tune_instrument_status (tune_id, instrument, status)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (tune_id, instrument) DO NOTHING`,
+        [tuneId, inst, defaultStatus]
+      );
+    }
+  }
+  for (const inst of existing) {
+    if (!desired.has(inst)) {
+      await pool.query(
+        `DELETE FROM tune_instrument_status WHERE tune_id = $1 AND instrument = $2`,
+        [tuneId, inst]
+      );
+    }
+  }
+}
+
 async function mergeTunes(primaryId, mergeIds, userId) {
   const client = await pool.connect();
   try {
@@ -393,7 +508,6 @@ async function mergeTunes(primaryId, mergeIds, userId) {
       await client.query('ROLLBACK');
       return null;
     }
-    const STATUS_RANK = { 'Memorized': 2, 'Learning': 1, 'Not Learned': 0 };
     const bestStatus = tunes.reduce((best, t) => {
       return (STATUS_RANK[t.learning_status] || 0) > (STATUS_RANK[best] || 0)
         ? t.learning_status : best;
@@ -445,5 +559,7 @@ module.exports = {
   getTunesByUser, getTuneById, createTune, updateTune, deleteTune, insertManyTunes,
   addTuneImage, getTuneImageList, getTuneImageData, deleteTuneImage,
   mergeTunes,
+  getTuneInstrumentStatuses, setTuneInstrumentStatus, deleteTuneInstrumentStatus,
+  syncTuneInstrumentRows, recomputeTuneLearningStatus,
   getSetsByUser, getSetById, createSet, updateSet, deleteSet, patchSet, practiceSet,
 };

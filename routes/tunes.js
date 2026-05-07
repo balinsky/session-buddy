@@ -68,6 +68,7 @@ router.post('/', async (req, res) => {
   try {
     if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
     const tune = await db.createTune(req.user.id, req.body);
+    await db.syncTuneInstrumentRows(tune.id, req.user.id, tune.instrument);
     res.status(201).json(tune);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -79,6 +80,7 @@ router.put('/:id', async (req, res) => {
     if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
     const tune = await db.updateTune(req.params.id, req.user.id, req.body);
     if (!tune) return res.status(404).json({ error: 'Tune not found.' });
+    await db.syncTuneInstrumentRows(tune.id, req.user.id, tune.instrument);
     res.json(tune);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -90,6 +92,9 @@ router.patch('/:id', async (req, res) => {
     const existing = await db.getTuneById(req.params.id, req.user.id);
     if (!existing) return res.status(404).json({ error: 'Tune not found.' });
     const tune = await db.updateTune(req.params.id, req.user.id, { ...existing, ...req.body });
+    if (req.body.instrument !== undefined) {
+      await db.syncTuneInstrumentRows(tune.id, req.user.id, tune.instrument);
+    }
     res.json(tune);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -233,6 +238,48 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Database error during import: ' + err.message });
+  }
+});
+
+const VALID_STATUSES = ['Not Learned', 'Learning', 'Memorized'];
+
+// --- Per-instrument learning status (design/PerInstrumentStatus.md) ---
+
+router.get('/:id/instruments', async (req, res) => {
+  try {
+    const tune = await db.getTuneById(req.params.id, req.user.id);
+    if (!tune) return res.status(404).json({ error: 'Tune not found.' });
+    res.json(await db.getTuneInstrumentStatuses(req.params.id, req.user.id));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/:id/instruments/:instrument', async (req, res) => {
+  try {
+    const status = (req.body && req.body.status) || 'Not Learned';
+    if (!VALID_STATUSES.includes(status)) {
+      return res.status(400).json({ error: `Status must be one of: ${VALID_STATUSES.join(', ')}.` });
+    }
+    const result = await db.setTuneInstrumentStatus(
+      req.params.id, req.user.id, req.params.instrument, status
+    );
+    if (result === null) return res.status(404).json({ error: 'Tune not found.' });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/instruments/:instrument', async (req, res) => {
+  try {
+    const result = await db.deleteTuneInstrumentStatus(
+      req.params.id, req.user.id, req.params.instrument
+    );
+    if (result === null) return res.status(404).json({ error: 'Tune not found.' });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

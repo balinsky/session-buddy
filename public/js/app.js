@@ -425,18 +425,21 @@ async function goToTuneDetail(tuneId) {
   document.getElementById('header-title').textContent = 'Tune Detail';
 
   try {
-    const [tune, allSets, images] = await Promise.all([
+    const [tune, allSets, images, instrumentStatuses] = await Promise.all([
       API.getTune(tuneId), API.getSets(), API.getTuneImages(tuneId),
+      API.getTuneInstrumentStatuses(tuneId),
     ]);
     const tuneSets = allSets.filter(s => s.tunes.some(t => t.id === tuneId));
-    renderTuneDetail(tune, tuneSets, images);
+    renderTuneDetail(tune, tuneSets, images, instrumentStatuses);
   } catch (e) {
     showError('Could not load tune: ' + e.message);
   }
 }
 
-function renderTuneDetail(tune, tuneSets = [], images = []) {
+function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses = []) {
   const sessionUrl = buildSessionUrl(tune.thesession_id, tune.setting);
+  const trackedInstruments = new Set(instrumentStatuses.map(s => s.instrument));
+  const unusedInstruments = INSTRUMENTS.filter(i => !trackedInstruments.has(i));
 
   let html = `
     <div class="detail-header">
@@ -449,10 +452,26 @@ function renderTuneDetail(tune, tuneSets = [], images = []) {
         ${tune.key ? `<span class="detail-meta-item">&#9835; ${esc(tune.key)}</span>` : ''}
         ${tune.parts ? `<span class="detail-meta-item">${esc(tune.parts)} parts</span>` : ''}
       </div>
-      <div class="status-control" id="status-control">
-        ${['Not Learned', 'Learning', 'Memorized'].map(s => `
-          <button class="status-btn ${statusClass(s)}${s === (tune.learning_status || 'Not Learned') ? ' active' : ''}" data-status="${s}">${s}</button>
-        `).join('')}
+      <div class="instrument-status-table" id="instrument-status-table">
+        <div class="instrument-status-title">Learning status</div>
+        ${instrumentStatuses.length === 0
+          ? `<div class="instrument-status-empty">No instruments tracked yet. Add one below.</div>`
+          : instrumentStatuses.map(row => `
+              <div class="instrument-status-row" data-instrument="${esc(row.instrument)}">
+                <span class="instrument-status-name">${esc(row.instrument)}</span>
+                <button class="status-badge ${statusClass(row.status)} tappable instrument-status-cycle"
+                        data-status="${row.status}" title="Tap to change status">${row.status} ↻</button>
+                <button class="instrument-status-remove" title="Remove this instrument" aria-label="Remove">&times;</button>
+              </div>
+            `).join('')}
+        ${unusedInstruments.length > 0
+          ? `<div class="instrument-status-add">
+               <select id="instrument-status-add-select">
+                 <option value="">+ Add instrument…</option>
+                 ${unusedInstruments.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('')}
+               </select>
+             </div>`
+          : ''}
       </div>
       <div class="detail-actions">
         <button class="btn btn-primary btn-small" id="btn-add-tune-from-detail">+ Add Tune</button>
@@ -599,22 +618,59 @@ function renderTuneDetail(tune, tuneSets = [], images = []) {
   document.getElementById('btn-edit-tune').addEventListener('click', () => goToTuneForm(tune));
   document.getElementById('btn-delete-tune').addEventListener('click', () => deleteTune(tune));
 
-  document.getElementById('status-control').addEventListener('click', async (e) => {
-    const btn = e.target.closest('.status-btn');
-    if (!btn || btn.classList.contains('active')) return;
-    const newStatus = btn.dataset.status;
+  // Per-instrument status table — tap badge to cycle, × to remove, picker to add.
+  const STATUS_CYCLE = { 'Not Learned': 'Learning', 'Learning': 'Memorized', 'Memorized': 'Not Learned' };
+
+  async function refreshInstrumentTable() {
     try {
-      const updated = await API.updateTune(tune.id, { ...tune, learning_status: newStatus });
-      tune.learning_status = newStatus;
-      document.querySelectorAll('.status-btn').forEach(b => {
-        b.classList.toggle('active', b.dataset.status === newStatus);
-      });
-      const idx = state.tunes.findIndex(t => t.id === updated.id);
-      if (idx !== -1) state.tunes[idx] = updated;
-    } catch (e) {
-      showError('Could not update status: ' + e.message);
+      const statuses = await API.getTuneInstrumentStatuses(tune.id);
+      const refreshed = await API.getTune(tune.id);
+      // Keep state.tunes in sync so the list view reflects the recomputed legacy status.
+      const idx = state.tunes.findIndex(t => t.id === refreshed.id);
+      if (idx !== -1) state.tunes[idx] = refreshed;
+      renderTuneDetail(refreshed, tuneSets, images, statuses);
+    } catch (err) {
+      showError('Could not reload instrument statuses: ' + err.message);
     }
-  });
+  }
+
+  const instrumentTable = document.getElementById('instrument-status-table');
+  if (instrumentTable) {
+    instrumentTable.addEventListener('click', async (e) => {
+      const cycle = e.target.closest('.instrument-status-cycle');
+      const remove = e.target.closest('.instrument-status-remove');
+      const row = e.target.closest('.instrument-status-row');
+      if (!row) return;
+      const instrument = row.dataset.instrument;
+      try {
+        if (cycle) {
+          const next = STATUS_CYCLE[cycle.dataset.status] || 'Not Learned';
+          await API.setTuneInstrumentStatus(tune.id, instrument, next);
+          await refreshInstrumentTable();
+        } else if (remove) {
+          if (!confirm(`Remove ${instrument} from this tune?`)) return;
+          await API.deleteTuneInstrumentStatus(tune.id, instrument);
+          await refreshInstrumentTable();
+        }
+      } catch (err) {
+        showError('Could not update instrument status: ' + err.message);
+      }
+    });
+
+    const addSelect = document.getElementById('instrument-status-add-select');
+    if (addSelect) {
+      addSelect.addEventListener('change', async () => {
+        const instrument = addSelect.value;
+        if (!instrument) return;
+        try {
+          await API.setTuneInstrumentStatus(tune.id, instrument, 'Not Learned');
+          await refreshInstrumentTable();
+        } catch (err) {
+          showError('Could not add instrument: ' + err.message);
+        }
+      });
+    }
+  }
 
   document.getElementById('btn-today').addEventListener('click', async () => {
     const today = new Date().toISOString().split('T')[0];

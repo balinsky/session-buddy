@@ -518,3 +518,129 @@ describe('POST /api/tunes/import-images', () => {
     expect(db.addTuneImage).toHaveBeenCalledWith(11, 1, 'score-12345.pdf', 'application/pdf', expect.any(Buffer));
   });
 });
+
+// ── Per-instrument status routes ─────────────────────────────────────────────
+
+describe('GET /api/tunes/:id/instruments', () => {
+  const SYNC = 'test-code';
+
+  it('returns the per-instrument statuses for the tune', async () => {
+    db.getTuneById.mockResolvedValue(VALID_TUNE);
+    db.getTuneInstrumentStatuses.mockResolvedValue([
+      { instrument: 'D Flute', status: 'Memorized' },
+      { instrument: 'Concertina', status: 'Learning' },
+    ]);
+    const res = await request(app)
+      .get('/api/tunes/10/instruments')
+      .set('x-sync-code', SYNC);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([
+      { instrument: 'D Flute', status: 'Memorized' },
+      { instrument: 'Concertina', status: 'Learning' },
+    ]);
+  });
+
+  it('returns 404 when the tune does not exist', async () => {
+    db.getTuneById.mockResolvedValue(null);
+    const res = await request(app)
+      .get('/api/tunes/999/instruments')
+      .set('x-sync-code', SYNC);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('PUT /api/tunes/:id/instruments/:instrument', () => {
+  const SYNC = 'test-code';
+
+  it('upserts the status for the given instrument', async () => {
+    db.setTuneInstrumentStatus.mockResolvedValue([
+      { instrument: 'D Flute', status: 'Memorized' },
+    ]);
+    const res = await request(app)
+      .put('/api/tunes/10/instruments/D%20Flute')
+      .set('x-sync-code', SYNC)
+      .send({ status: 'Memorized' });
+    expect(res.status).toBe(200);
+    expect(db.setTuneInstrumentStatus).toHaveBeenCalledWith('10', 1, 'D Flute', 'Memorized');
+  });
+
+  it('returns 400 for an invalid status', async () => {
+    const res = await request(app)
+      .put('/api/tunes/10/instruments/D%20Flute')
+      .set('x-sync-code', SYNC)
+      .send({ status: 'Inverted' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/status must be one of/i);
+    expect(db.setTuneInstrumentStatus).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when the tune is not owned by the user', async () => {
+    db.setTuneInstrumentStatus.mockResolvedValue(null);
+    const res = await request(app)
+      .put('/api/tunes/10/instruments/Fiddle')
+      .set('x-sync-code', SYNC)
+      .send({ status: 'Learning' });
+    expect(res.status).toBe(404);
+  });
+
+  it('defaults status to Not Learned when omitted from the body', async () => {
+    db.setTuneInstrumentStatus.mockResolvedValue([]);
+    await request(app)
+      .put('/api/tunes/10/instruments/Fiddle')
+      .set('x-sync-code', SYNC)
+      .send({});
+    expect(db.setTuneInstrumentStatus).toHaveBeenCalledWith('10', 1, 'Fiddle', 'Not Learned');
+  });
+});
+
+describe('DELETE /api/tunes/:id/instruments/:instrument', () => {
+  const SYNC = 'test-code';
+
+  it('deletes the per-instrument row and returns the remaining list', async () => {
+    db.deleteTuneInstrumentStatus.mockResolvedValue([]);
+    const res = await request(app)
+      .delete('/api/tunes/10/instruments/D%20Flute')
+      .set('x-sync-code', SYNC);
+    expect(res.status).toBe(200);
+    expect(db.deleteTuneInstrumentStatus).toHaveBeenCalledWith('10', 1, 'D Flute');
+  });
+
+  it('returns 404 when the tune is not owned by the user', async () => {
+    db.deleteTuneInstrumentStatus.mockResolvedValue(null);
+    const res = await request(app)
+      .delete('/api/tunes/10/instruments/Fiddle')
+      .set('x-sync-code', SYNC);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('Tune save: per-instrument sync', () => {
+  const SYNC = 'test-code';
+
+  it('POST /api/tunes calls syncTuneInstrumentRows with the new tune\'s instrument list', async () => {
+    db.createTune.mockResolvedValue({ ...VALID_TUNE, instrument: 'D Flute, Concertina' });
+    await request(app)
+      .post('/api/tunes')
+      .set('x-sync-code', SYNC)
+      .send({ name: VALID_TUNE.name, instrument: 'D Flute, Concertina' });
+    expect(db.syncTuneInstrumentRows).toHaveBeenCalledWith(VALID_TUNE.id, 1, 'D Flute, Concertina');
+  });
+
+  it('PUT /api/tunes/:id calls syncTuneInstrumentRows after the update', async () => {
+    db.updateTune.mockResolvedValue({ ...VALID_TUNE, instrument: 'Fiddle' });
+    await request(app)
+      .put('/api/tunes/10')
+      .set('x-sync-code', SYNC)
+      .send({ name: VALID_TUNE.name, instrument: 'Fiddle' });
+    expect(db.syncTuneInstrumentRows).toHaveBeenCalledWith(VALID_TUNE.id, 1, 'Fiddle');
+  });
+
+  it('PATCH /api/tunes/:id only syncs when the body includes an instrument field', async () => {
+    db.getTuneById.mockResolvedValue(VALID_TUNE);
+    db.updateTune.mockResolvedValue(VALID_TUNE);
+    await request(app).patch('/api/tunes/10').set('x-sync-code', SYNC).send({ favorite: 1 });
+    expect(db.syncTuneInstrumentRows).not.toHaveBeenCalled();
+    await request(app).patch('/api/tunes/10').set('x-sync-code', SYNC).send({ instrument: 'Fiddle' });
+    expect(db.syncTuneInstrumentRows).toHaveBeenCalled();
+  });
+});

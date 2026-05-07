@@ -368,6 +368,78 @@ html, body {
 .status-btn.active.not-learned { background: var(--status-not-learned-bg); color: var(--status-not-learned-text); }
 .status-btn:not(.active):hover { background: var(--cream); }
 
+/* Per-instrument learning status table on tune detail */
+.instrument-status-table {
+  margin-top: 10px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+}
+
+.instrument-status-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.instrument-status-empty {
+  padding: 12px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.instrument-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.instrument-status-row:last-child { border-bottom: none; }
+
+.instrument-status-name {
+  flex: 1;
+  font-size: 0.95rem;
+}
+
+.instrument-status-cycle {
+  /* Reuses .status-badge colors; just make sure it's tappable-sized. */
+  cursor: pointer;
+  border: none;
+  font: inherit;
+}
+
+.instrument-status-remove {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.instrument-status-remove:hover { color: var(--danger, #c33); }
+
+.instrument-status-add {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.instrument-status-add select {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--white);
+}
+
 .status-group-header {
   font-size: 0.8rem;
   font-weight: 600;

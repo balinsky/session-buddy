@@ -65,6 +65,13 @@ const API = (() => {
       return request('POST', '/api/tunes/import-images', form, true);
     },
 
+    // Per-instrument learning status
+    getTuneInstrumentStatuses: (id) => request('GET', `/api/tunes/${id}/instruments`),
+    setTuneInstrumentStatus: (id, instrument, status) =>
+      request('PUT', `/api/tunes/${id}/instruments/${encodeURIComponent(instrument)}`, { status }),
+    deleteTuneInstrumentStatus: (id, instrument) =>
+      request('DELETE', `/api/tunes/${id}/instruments/${encodeURIComponent(instrument)}`),
+
     // Sets
     getSets: () => request('GET', '/api/sets'),
     getSet: (id) => request('GET', `/api/sets/${id}`),
