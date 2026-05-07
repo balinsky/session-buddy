@@ -72,9 +72,10 @@ const state = {
 // ===== UTILITIES =====
 
 function getSortName(name) {
-  if (/^the\s+/i.test(name)) {
-    return name.replace(/^the\s+/i, '') + ', The';
-  }
+  // Strip a leading article ("The", "An", "A") for sort purposes and append it
+  // back with a comma so that "The Blarney Pilgrim" sorts under B, not T.
+  const m = name.match(/^(The|An|A)\s+(.+)$/i);
+  if (m) return m[2] + ', ' + m[1];
   return name;
 }
 
