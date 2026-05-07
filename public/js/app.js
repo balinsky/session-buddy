@@ -1494,12 +1494,19 @@ function checkTuneDuplicates() {
   const seen = new Set();
 
   for (const [, tunes] of Object.entries(byName)) {
-    if (tunes.length > 1) {
-      const sig = 'n:' + tunes.map(t => t.id).sort().join(',');
-      if (!seen.has(sig)) {
-        seen.add(sig);
-        groups.push({ reason: `Same name: "${tunes[0].name}"`, tunes });
-      }
+    if (tunes.length < 2) continue;
+    // A name match alone isn't enough to flag a duplicate — different tunes
+    // sometimes share a name (e.g. "Last Night's Fun" exists as both a Reel
+    // and a Slip Jig with different Thesession IDs). Skip the group if the
+    // tunes disagree on type or on a non-empty Thesession ID.
+    const types = new Set(tunes.map(t => (t.type || '').trim()).filter(Boolean));
+    const sids = new Set(tunes.map(t => (t.thesession_id || '').trim()).filter(Boolean));
+    if (types.size > 1) continue;
+    if (sids.size > 1) continue;
+    const sig = 'n:' + tunes.map(t => t.id).sort().join(',');
+    if (!seen.has(sig)) {
+      seen.add(sig);
+      groups.push({ reason: `Same name: "${tunes[0].name}"`, tunes });
     }
   }
   for (const [sid, tunes] of Object.entries(bySid)) {
