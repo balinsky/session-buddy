@@ -451,6 +451,49 @@ async function setTuneInstrumentStatus(tuneId, userId, instrument, status) {
   return getTuneInstrumentStatuses(tuneId, userId);
 }
 
+// Bulk-insert per-instrument rows after a CSV import. Skips conflicts so a
+// re-import doesn't clobber per-instrument changes the user has made since.
+// Runs in a single transaction. Recomputes legacy learning_status once at the
+// end per affected tune (avoids per-row recomputes inside the loop).
+async function bulkInsertTuneInstrumentStatuses(rows) {
+  if (rows.length === 0) return;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const affectedTunes = new Set();
+    for (const r of rows) {
+      await client.query(
+        `INSERT INTO tune_instrument_status (tune_id, instrument, status)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (tune_id, instrument) DO NOTHING`,
+        [r.tune_id, r.instrument, r.status]
+      );
+      affectedTunes.add(r.tune_id);
+    }
+    // Recompute legacy learning_status to best-of for each affected tune.
+    for (const tuneId of affectedTunes) {
+      await client.query(
+        `UPDATE tunes SET learning_status = (
+           SELECT CASE
+             WHEN BOOL_OR(status = 'Memorized') THEN 'Memorized'
+             WHEN BOOL_OR(status = 'Learning') THEN 'Learning'
+             ELSE 'Not Learned'
+           END
+           FROM tune_instrument_status WHERE tune_id = $1
+         )
+         WHERE id = $1`,
+        [tuneId]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 async function deleteTuneInstrumentStatus(tuneId, userId, instrument) {
   const { rowCount } = await pool.query(
     `SELECT 1 FROM tunes WHERE id = $1 AND user_id = $2`,
@@ -578,6 +621,6 @@ module.exports = {
   addTuneImage, getTuneImageList, getTuneImageData, deleteTuneImage,
   mergeTunes,
   getTuneInstrumentStatuses, setTuneInstrumentStatus, deleteTuneInstrumentStatus,
-  syncTuneInstrumentRows, recomputeTuneLearningStatus,
+  syncTuneInstrumentRows, recomputeTuneLearningStatus, bulkInsertTuneInstrumentStatuses,
   getSetsByUser, getSetById, createSet, updateSet, deleteSet, patchSet, practiceSet,
 };

@@ -314,6 +314,93 @@ describe('POST /api/tunes/import', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/could not parse csv/i);
   });
+
+  // ── Phase 5: per-instrument CSV columns ──────────────────────────────────
+
+  it('uses per-instrument columns when present and bulk-inserts statuses', async () => {
+    const csv =
+      'Name,Learned (D Flute),Learned (Concertina)\n' +
+      "Morrison's Jig,X,L\n" +
+      'The Kesh Jig,L,';
+    db.insertManyTunes.mockResolvedValue([{ id: 11 }, { id: 22 }]);
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.status).toBe(200);
+    expect(res.body.perInstrumentMode).toBe(true);
+    // Comma-joined instrument list reflects SUPPORTED_INSTRUMENTS iteration
+    // order (Concertina before D Flute), not CSV column order.
+    expect(db.insertManyTunes).toHaveBeenCalledWith(1, expect.arrayContaining([
+      expect.objectContaining({ name: "Morrison's Jig", instrument: 'Concertina, D Flute', learning_status: 'Memorized' }),
+      expect.objectContaining({ name: 'The Kesh Jig', instrument: 'D Flute', learning_status: 'Learning' }),
+    ]));
+    expect(db.bulkInsertTuneInstrumentStatuses).toHaveBeenCalledWith([
+      { tune_id: 11, instrument: 'Concertina', status: 'Learning' },
+      { tune_id: 11, instrument: 'D Flute', status: 'Memorized' },
+      { tune_id: 22, instrument: 'D Flute', status: 'Learning' },
+    ]);
+    expect(db.syncTuneInstrumentRows).not.toHaveBeenCalled();
+  });
+
+  it('treats blank cells in per-instrument columns as not tracked', async () => {
+    const csv =
+      'Name,Learned (D Flute),Learned (Concertina)\n' +
+      'Lonesome Tune,,\n';
+    db.insertManyTunes.mockResolvedValue([{ id: 33 }]);
+    await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(db.insertManyTunes).toHaveBeenCalledWith(1, expect.arrayContaining([
+      expect.objectContaining({ name: 'Lonesome Tune', instrument: '', learning_status: 'Not Learned' }),
+    ]));
+    // No per-instrument rows should be inserted for the blank-only row.
+    expect(db.bulkInsertTuneInstrumentStatuses).not.toHaveBeenCalled();
+  });
+
+  it('combines per-instrument cells with the Instrument column for instruments without their own cell', async () => {
+    // Concertina has a per-instrument column; Fiddle doesn't but is in Instrument.
+    const csv =
+      'Name,Instrument,Learned (Concertina)\n' +
+      "Morrison's Jig,Fiddle,X\n";
+    db.insertManyTunes.mockResolvedValue([{ id: 44 }]);
+    await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(db.bulkInsertTuneInstrumentStatuses).toHaveBeenCalledWith([
+      { tune_id: 44, instrument: 'Concertina', status: 'Memorized' },
+      { tune_id: 44, instrument: 'Fiddle', status: 'Not Learned' },
+    ]);
+  });
+
+  it('falls back to legacy Learned column when no per-instrument columns are present', async () => {
+    const csv = "Name,Instrument,Learned\nMorrison's Jig,D Flute,X";
+    db.insertManyTunes.mockResolvedValue([{ id: 55 }]);
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.body.perInstrumentMode).toBe(false);
+    expect(db.insertManyTunes).toHaveBeenCalledWith(1, expect.arrayContaining([
+      expect.objectContaining({ learning_status: 'Memorized', instrument: 'D Flute' }),
+    ]));
+    // Legacy path uses syncTuneInstrumentRows to copy legacy status to playable list.
+    expect(db.syncTuneInstrumentRows).toHaveBeenCalledWith(55, 1, 'D Flute');
+    expect(db.bulkInsertTuneInstrumentStatuses).not.toHaveBeenCalled();
+  });
+
+  it('per-instrument column header lookup is case-insensitive', async () => {
+    const csv = 'Name,LEARNED (D Flute)\nMorrison\'s Jig,X';
+    db.insertManyTunes.mockResolvedValue([{ id: 66 }]);
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.body.perInstrumentMode).toBe(true);
+    expect(db.bulkInsertTuneInstrumentStatuses).toHaveBeenCalled();
+  });
 });
 
 // ── Image serving ─────────────────────────────────────────────────────────────

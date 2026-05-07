@@ -151,10 +151,65 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     return key ? (row[key] || '') : '';
   }
 
+  // Detect per-instrument columns (Phase 5). Returns Map<instrument, headerName>.
+  // The presence of any such column makes per-instrument data authoritative;
+  // the legacy `Learned` column is then ignored for status resolution.
+  const SUPPORTED_INSTRUMENTS = ['Bb Whistle', 'C Whistle', 'Concertina', 'D Flute', 'Fiddle', 'High D Whistle', 'Low F Whistle'];
+  const perInstrumentHeaders = new Map();
+  if (records.length > 0) {
+    const headerKeys = Object.keys(records[0]);
+    for (const inst of SUPPORTED_INSTRUMENTS) {
+      const target = `learned (${inst})`.toLowerCase();
+      const match = headerKeys.find(h => h.toLowerCase() === target);
+      if (match) perInstrumentHeaders.set(inst, match);
+    }
+  }
+  const usePerInstrument = perInstrumentHeaders.size > 0;
+
+  function parsePerInstrumentCells(row, instrumentColumnList) {
+    // Returns Map<instrument, status>. Blank cells in per-instrument columns
+    // mean "not tracked" (no row); the Instrument column then fills in any
+    // instruments NOT covered by a per-instrument column, defaulting to Not Learned.
+    const tracked = new Map();
+    for (const [inst, header] of perInstrumentHeaders) {
+      const cell = (row[header] || '').trim().toUpperCase();
+      if (cell === '') continue;
+      const status = cell === 'X' ? 'Memorized' : cell === 'L' ? 'Learning' : 'Not Learned';
+      tracked.set(inst, status);
+    }
+    const coveredByColumn = new Set(perInstrumentHeaders.keys());
+    for (const inst of instrumentColumnList) {
+      if (coveredByColumn.has(inst)) continue;
+      if (tracked.has(inst)) continue;
+      tracked.set(inst, 'Not Learned');
+    }
+    return tracked;
+  }
+
+  const STATUS_RANK = { 'Memorized': 2, 'Learning': 1, 'Not Learned': 0 };
+  function bestOf(map) {
+    let best = 'Not Learned';
+    for (const status of map.values()) {
+      if ((STATUS_RANK[status] ?? 0) > (STATUS_RANK[best] ?? 0)) best = status;
+    }
+    return best;
+  }
+
   const tunes = records
     .map(row => {
-      const learnedCol = col(row, 'Learned');
-      const isMemorized = learnedCol.toUpperCase() === 'X';
+      const instrumentColumn = col(row, 'Instrument');
+      const instrumentColumnList = instrumentColumn.split(',').map(s => s.trim()).filter(Boolean);
+
+      let learning_status, instrument, _instrumentStatuses;
+      if (usePerInstrument) {
+        _instrumentStatuses = parsePerInstrumentCells(row, instrumentColumnList);
+        instrument = Array.from(_instrumentStatuses.keys()).join(', ');
+        learning_status = _instrumentStatuses.size > 0 ? bestOf(_instrumentStatuses) : 'Not Learned';
+      } else {
+        const learnedCol = col(row, 'Learned');
+        learning_status = learnedCol.toUpperCase() === 'X' ? 'Memorized' : 'Not Learned';
+        instrument = instrumentColumn;
+      }
 
       return {
         name: col(row, 'Name'),
@@ -164,7 +219,7 @@ router.post('/import', upload.single('csv'), async (req, res) => {
         incipit_a: col(row, 'Incipit A'),
         incipit_b: col(row, 'Incipit B'),
         incipit_c: col(row, 'Incipit C'),
-        learning_status: isMemorized ? 'Memorized' : 'Not Learned',
+        learning_status,
         count: parseInt(col(row, 'Count')) || 0,
         added_date: col(row, 'Added'),
         where_learned: col(row, 'Where'),
@@ -178,8 +233,11 @@ router.post('/import', upload.single('csv'), async (req, res) => {
         notes: col(row, 'Notes'),
         composer: col(row, 'Composer'),
         last_practiced_date: col(row, 'Last Practiced Date'),
-        instrument: col(row, 'Instrument'),
+        instrument,
         sequence_id: col(row, 'Sequence ID'),
+        // Carried alongside the tune for the post-insert per-instrument pass.
+        // db.insertManyTunes ignores fields it doesn't recognize.
+        _instrumentStatuses,
       };
     })
     .filter(t => t.name.length > 0);
@@ -230,11 +288,34 @@ router.post('/import', upload.single('csv'), async (req, res) => {
 
   try {
     const imported = toImport.length > 0 ? await db.insertManyTunes(req.user.id, toImport) : [];
+
+    // Populate tune_instrument_status from per-instrument columns (if used)
+    // or from the legacy Instrument list + legacy Learned status (sync logic).
+    if (usePerInstrument) {
+      const bulkRows = [];
+      for (let i = 0; i < imported.length; i++) {
+        const map = toImport[i]._instrumentStatuses;
+        if (!map) continue;
+        for (const [instrument, status] of map) {
+          bulkRows.push({ tune_id: imported[i].id, instrument, status });
+        }
+      }
+      if (bulkRows.length > 0) await db.bulkInsertTuneInstrumentStatuses(bulkRows);
+    } else {
+      // Pair imported (has the new ids) with toImport (has the original
+      // instrument string we just sent in). Symmetric with the per-instrument
+      // path above; avoids depending on the DB returning the full row.
+      for (let i = 0; i < imported.length; i++) {
+        await db.syncTuneInstrumentRows(imported[i].id, req.user.id, toImport[i].instrument);
+      }
+    }
+
     res.json({
       imported: imported.length,
       duplicates: errorRows.length,
       errorRows,
       createdIds: imported.map(t => t.id),
+      perInstrumentMode: usePerInstrument,
     });
   } catch (err) {
     res.status(500).json({ error: 'Database error during import: ' + err.message });

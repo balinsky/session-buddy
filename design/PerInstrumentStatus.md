@@ -76,7 +76,7 @@ Card shows the **best** status across instruments (a tune memorized on any instr
 Per-instrument columns. The single `Learned` column is kept as a backward-compat fallback so existing spreadsheets continue to import.
 
 - New columns, one per instrument (case-insensitive): e.g. `Learned (D Flute)`, `Learned (Concertina)`, …
-- Values use the existing `Learned` semantics: `X` = Memorized, `L` = Learning, anything else = Not Learned.
+- Values: `X` = Memorized, `L` = Learning, **blank cell = not tracked** (no per-instrument row for that instrument), any other non-blank value = Not Learned (tracked). The blank-means-untracked rule lets a sparse spreadsheet express "I track this tune on flute but not on concertina" without forcing every column to apply to every row.
 - If the CSV has any per-instrument columns, they're authoritative. The single `Learned` column is ignored.
 - If the CSV has only the legacy `Learned` column, its value is copied to every instrument the tune is marked playable on (same as the migration logic). This preserves the current import behavior for old CSVs.
 
