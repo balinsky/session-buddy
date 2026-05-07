@@ -27,7 +27,7 @@ PRIMARY KEY (tune_id, instrument)
 ```
 
 - One row per `(tune, instrument)` the user wants to track.
-- Allowed `instrument` values match the existing list: Bb Whistle, C Whistle, Concertina, D Flute, D Generic, Fiddle, High D Whistle, Low F Whistle.
+- Allowed `instrument` values match the existing list: Bb Whistle, C Whistle, Concertina, D Flute, Fiddle, High D Whistle, Low F Whistle.
 - The current `tunes.learning_status` and `tunes.instrument` columns are dropped after migration completes (per resolved decision 1: collapse).
 
 ## Relationship to existing `tunes.instrument`

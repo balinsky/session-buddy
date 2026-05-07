@@ -59,7 +59,7 @@ Tunes are the primary entity. Each tune has the following fields:
 
 **Incipits** are shown as both raw ABC notation text and rendered sheet music. The ABC header (meter, key) is derived automatically from the tune's Type and Key fields. Incipit B and C are only shown if they have a value.
 
-**Instrument** values are stored as a comma-separated string. The UI presents them as a checkbox grid with these options: Bb Whistle, C Whistle, Concertina, D Flute, D Generic, Fiddle, High D Whistle, Low F Whistle.
+**Instrument** values are stored as a comma-separated string. The UI presents them as a checkbox grid with these options: Bb Whistle, C Whistle, Concertina, D Flute, Fiddle, High D Whistle, Low F Whistle.
 
 ### Sets
 A set is an ordered grouping of 1–8 tunes. A tune can belong to multiple sets. Sets are displayed as slash-separated tune names: `Tune1 / Tune2 / Tune3`.

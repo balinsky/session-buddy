@@ -16,7 +16,7 @@ const TUNE_TYPES = [
 
 const INSTRUMENTS = [
   'Bb Whistle', 'C Whistle', 'Concertina', 'D Flute',
-  'D Generic', 'Fiddle', 'High D Whistle', 'Low F Whistle',
+  'Fiddle', 'High D Whistle', 'Low F Whistle',
 ];
 
 // Default ABC time signature for each tune type
