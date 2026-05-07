@@ -368,25 +368,10 @@ html, body {
 .status-btn.active.not-learned { background: var(--status-not-learned-bg); color: var(--status-not-learned-text); }
 .status-btn:not(.active):hover { background: var(--cream); }
 
-/* Per-instrument learning status table on tune detail */
-.instrument-status-table {
-  margin-top: 10px;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--white);
-}
-
-.instrument-status-title {
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-}
-
+/* Per-instrument learning status table on tune detail. The table sits inside
+   a .detail-card, which already provides background/padding/border-radius —
+   no container styling on the table itself. */
 .instrument-status-empty {
-  padding: 12px;
   font-size: 0.9rem;
   color: var(--text-muted);
   font-style: italic;
@@ -396,7 +381,7 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -408,7 +393,6 @@ html, body {
 }
 
 .instrument-status-cycle {
-  /* Reuses .status-badge colors; just make sure it's tappable-sized. */
   cursor: pointer;
   border: none;
   font: inherit;
@@ -427,7 +411,8 @@ html, body {
 .instrument-status-remove:hover { color: var(--danger, #c33); }
 
 .instrument-status-add {
-  padding: 8px 12px;
+  padding-top: 10px;
+  margin-top: 4px;
   border-top: 1px solid var(--border);
 }
 

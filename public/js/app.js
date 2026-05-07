@@ -235,6 +235,15 @@ function showView(viewId, pushToHistory = true) {
   document.getElementById('main-content').scrollTop = 0;
 }
 
+// Header text to restore when navigating back to a view that doesn't re-render
+// itself on goBack (i.e., views other than 'tunes' / 'sets' which call their
+// own goTo* helper). Without this, the header would stick on whatever the
+// previous view set (e.g., "Edit Tune" persists when backing out of the form).
+const VIEW_TITLES = {
+  'tune-detail': 'Tune Detail',
+  'set-detail': 'Set Detail',
+};
+
 function goBack() {
   state.backStack.pop();
   const prev = state.backStack[state.backStack.length - 1];
@@ -245,6 +254,9 @@ function goBack() {
     goToSets();
   } else {
     showView(prev, false);
+    if (VIEW_TITLES[prev]) {
+      document.getElementById('header-title').textContent = VIEW_TITLES[prev];
+    }
   }
 }
 
@@ -452,27 +464,6 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
         ${tune.key ? `<span class="detail-meta-item">&#9835; ${esc(tune.key)}</span>` : ''}
         ${tune.parts ? `<span class="detail-meta-item">${esc(tune.parts)} parts</span>` : ''}
       </div>
-      <div class="instrument-status-table" id="instrument-status-table">
-        <div class="instrument-status-title">Learning status</div>
-        ${instrumentStatuses.length === 0
-          ? `<div class="instrument-status-empty">No instruments tracked yet. Add one below.</div>`
-          : instrumentStatuses.map(row => `
-              <div class="instrument-status-row" data-instrument="${esc(row.instrument)}">
-                <span class="instrument-status-name">${esc(row.instrument)}</span>
-                <button class="status-badge ${statusClass(row.status)} tappable instrument-status-cycle"
-                        data-status="${row.status}" title="Tap to change status">${row.status} ↻</button>
-                <button class="instrument-status-remove" title="Remove this instrument" aria-label="Remove">&times;</button>
-              </div>
-            `).join('')}
-        ${unusedInstruments.length > 0
-          ? `<div class="instrument-status-add">
-               <select id="instrument-status-add-select">
-                 <option value="">+ Add instrument…</option>
-                 ${unusedInstruments.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('')}
-               </select>
-             </div>`
-          : ''}
-      </div>
       <div class="detail-actions">
         <button class="btn btn-primary btn-small" id="btn-add-tune-from-detail">+ Add Tune</button>
         <button class="btn btn-outline btn-small" id="btn-add-to-set">+ Add to Set</button>
@@ -527,6 +518,32 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
     </label>
     <button class="btn btn-primary btn-small hidden" id="btn-upload-image" style="margin-top:8px;">Upload</button>
     <div id="tune-image-status" class="hint" style="margin-top:6px;min-height:1em;"></div>
+  </div>`;
+
+  // Per-instrument learning status (sits below incipits + attachments,
+  // above Details / Practice / Additional Info).
+  html += `<div class="detail-card">
+    <div class="detail-card-title">Learning status</div>
+    <div class="instrument-status-table" id="instrument-status-table">
+      ${instrumentStatuses.length === 0
+        ? `<div class="instrument-status-empty">No instruments tracked yet. Add one below.</div>`
+        : instrumentStatuses.map(row => `
+            <div class="instrument-status-row" data-instrument="${esc(row.instrument)}">
+              <span class="instrument-status-name">${esc(row.instrument)}</span>
+              <button class="status-badge ${statusClass(row.status)} tappable instrument-status-cycle"
+                      data-status="${row.status}" title="Tap to change status">${row.status} ↻</button>
+              <button class="instrument-status-remove" title="Remove this instrument" aria-label="Remove">&times;</button>
+            </div>
+          `).join('')}
+      ${unusedInstruments.length > 0
+        ? `<div class="instrument-status-add">
+             <select id="instrument-status-add-select">
+               <option value="">+ Add instrument…</option>
+               ${unusedInstruments.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('')}
+             </select>
+           </div>`
+        : ''}
+    </div>
   </div>`;
 
   // Always-visible fields
