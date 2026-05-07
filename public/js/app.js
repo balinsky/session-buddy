@@ -182,17 +182,41 @@ function isSetFilterActive() {
   return f.favoriteOnly || f.types.length > 0;
 }
 
+// Cross-criterion status × instrument check (design/PerInstrumentStatus.md, Phase 4).
+//
+// When BOTH "Learning Status" and "Instrument" filters are set and the tune
+// has per-instrument rows, the criterion is applied to a single row: the tune
+// passes only if some (instrument, status) pair matches both selected lists.
+// "Memorized + D Flute" therefore means "D Flute is specifically Memorized",
+// not the previous independent-AND meaning ("best-of memorized AND playable
+// on D Flute").
+//
+// For status-alone, instrument-alone, or tunes that have no per-instrument
+// rows yet, fall back to the legacy independent-criteria behavior.
+function matchesStatusAndInstrument(tune, statuses, instruments) {
+  const wantStatus = statuses.length > 0;
+  const wantInstrument = instruments.length > 0;
+  if (!wantStatus && !wantInstrument) return true;
+
+  const rows = tune.instrument_statuses || [];
+  if (wantStatus && wantInstrument && rows.length > 0) {
+    return rows.some(r => instruments.includes(r.instrument) && statuses.includes(r.status));
+  }
+  if (wantStatus && !statuses.includes(tune.learning_status || 'Not Learned')) return false;
+  if (wantInstrument) {
+    const tuneInstr = (tune.instrument || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!instruments.some(i => tuneInstr.includes(i))) return false;
+  }
+  return true;
+}
+
 function applyTuneFilter(tunes) {
   const f = state.tuneFilter;
   return tunes.filter(t => {
     if (f.favoriteOnly && !t.favorite) return false;
-    if (f.statuses.length && !f.statuses.includes(t.learning_status || 'Not Learned')) return false;
+    if (!matchesStatusAndInstrument(t, f.statuses, f.instruments)) return false;
     if (f.types.length && !f.types.includes(t.type)) return false;
     if (f.key && !(t.key || '').toLowerCase().includes(f.key.toLowerCase())) return false;
-    if (f.instruments.length) {
-      const tuneInstr = (t.instrument || '').split(',').map(s => s.trim()).filter(Boolean);
-      if (!f.instruments.some(i => tuneInstr.includes(i))) return false;
-    }
     if (f.where && !(t.where_learned || '').toLowerCase().includes(f.where.toLowerCase())) return false;
     if (f.who && !(t.who || '').toLowerCase().includes(f.who.toLowerCase())) return false;
     if (f.practicedDays != null) {
