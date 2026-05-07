@@ -68,7 +68,10 @@ router.post('/', async (req, res) => {
   try {
     if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
     const tune = await db.createTune(req.user.id, req.body);
-    await db.syncTuneInstrumentRows(tune.id, req.user.id, tune.instrument);
+    // The form's instrument list and learning_status are no longer columns;
+    // pass them straight through to the per-instrument sync. Newly-checked
+    // instruments adopt learning_status as their starting status.
+    await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
     res.status(201).json(tune);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -80,7 +83,7 @@ router.put('/:id', async (req, res) => {
     if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
     const tune = await db.updateTune(req.params.id, req.user.id, req.body);
     if (!tune) return res.status(404).json({ error: 'Tune not found.' });
-    await db.syncTuneInstrumentRows(tune.id, req.user.id, tune.instrument);
+    await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
     res.json(tune);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -93,7 +96,7 @@ router.patch('/:id', async (req, res) => {
     if (!existing) return res.status(404).json({ error: 'Tune not found.' });
     const tune = await db.updateTune(req.params.id, req.user.id, { ...existing, ...req.body });
     if (req.body.instrument !== undefined) {
-      await db.syncTuneInstrumentRows(tune.id, req.user.id, tune.instrument);
+      await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
     }
     res.json(tune);
   } catch (err) {
@@ -302,11 +305,14 @@ router.post('/import', upload.single('csv'), async (req, res) => {
       }
       if (bulkRows.length > 0) await db.bulkInsertTuneInstrumentStatuses(bulkRows);
     } else {
-      // Pair imported (has the new ids) with toImport (has the original
-      // instrument string we just sent in). Symmetric with the per-instrument
-      // path above; avoids depending on the DB returning the full row.
+      // Legacy CSV path. Pass the row's resolved learning_status as the
+      // default for newly-created per-instrument rows so `Learned=X` continues
+      // to produce Memorized rows (matching design Phase 1 migration logic).
       for (let i = 0; i < imported.length; i++) {
-        await db.syncTuneInstrumentRows(imported[i].id, req.user.id, toImport[i].instrument);
+        await db.syncTuneInstrumentRows(
+          imported[i].id, req.user.id,
+          toImport[i].instrument, toImport[i].learning_status
+        );
       }
     }
 

@@ -144,6 +144,11 @@ async function getTuneById(id, userId) {
   return rows[0] || null;
 }
 
+// Per-tune column list. Status & playable instruments live in the
+// tune_instrument_status table (Phase 6 of design/PerInstrumentStatus.md);
+// the legacy `learning_status` and `instrument` columns are no longer read or
+// written, even though they may still exist in the schema until the column
+// drop in db.init().
 function tuneParams(userId, data) {
   return [
     userId,
@@ -154,7 +159,6 @@ function tuneParams(userId, data) {
     data.incipit_a || null,
     data.incipit_b || null,
     data.incipit_c || null,
-    data.learning_status || 'Not Learned',
     parseInt(data.count) || 0,
     data.added_date || null,
     data.where_learned || null,
@@ -168,7 +172,6 @@ function tuneParams(userId, data) {
     data.notes || null,
     data.composer || null,
     data.last_practiced_date || null,
-    data.instrument || null,
     data.sequence_id || null,
   ];
 }
@@ -178,12 +181,12 @@ async function createTune(userId, data) {
     INSERT INTO tunes (
       user_id, name, type, key, parts,
       incipit_a, incipit_b, incipit_c,
-      learning_status, count, added_date, where_learned, who,
+      count, added_date, where_learned, who,
       mnemonic, tunebooks, date_learned, favorite,
       thesession_id, setting, notes, composer, last_practiced_date,
-      instrument, sequence_id
+      sequence_id
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
     ) RETURNING *`,
     tuneParams(userId, data)
   );
@@ -196,12 +199,12 @@ async function updateTune(id, userId, data) {
     UPDATE tunes SET
       name=$1, type=$2, key=$3, parts=$4,
       incipit_a=$5, incipit_b=$6, incipit_c=$7,
-      learning_status=$8, count=$9, added_date=$10,
-      where_learned=$11, who=$12, mnemonic=$13, tunebooks=$14,
-      date_learned=$15, favorite=$16, thesession_id=$17,
-      setting=$18, notes=$19, composer=$20, last_practiced_date=$21,
-      instrument=$22, sequence_id=$23
-    WHERE id=$24 AND user_id=$25
+      count=$8, added_date=$9,
+      where_learned=$10, who=$11, mnemonic=$12, tunebooks=$13,
+      date_learned=$14, favorite=$15, thesession_id=$16,
+      setting=$17, notes=$18, composer=$19, last_practiced_date=$20,
+      sequence_id=$21
+    WHERE id=$22 AND user_id=$23
     RETURNING *`,
     params
   );
@@ -222,12 +225,12 @@ async function insertManyTunes(userId, tunes) {
         INSERT INTO tunes (
           user_id, name, type, key, parts,
           incipit_a, incipit_b, incipit_c,
-          learning_status, count, added_date, where_learned, who,
+          count, added_date, where_learned, who,
           mnemonic, tunebooks, date_learned, favorite,
           thesession_id, setting, notes, composer, last_practiced_date,
-          instrument, sequence_id
+          sequence_id
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
         ) RETURNING *`,
         tuneParams(userId, tune)
       );
@@ -415,26 +418,6 @@ async function getTuneInstrumentStatuses(tuneId, userId) {
   return rows;
 }
 
-// Sets tunes.learning_status to the best-of the per-instrument rows. Keeps
-// the legacy column consistent with per-instrument data so the (still-legacy)
-// list view stays accurate until Phase 3 cuts it over. If a tune has no
-// per-instrument rows, the legacy column is left alone.
-async function recomputeTuneLearningStatus(tuneId, userId) {
-  const { rows } = await pool.query(
-    `SELECT status FROM tune_instrument_status WHERE tune_id = $1`,
-    [tuneId]
-  );
-  if (rows.length === 0) return;
-  const best = rows.reduce(
-    (b, r) => (STATUS_RANK[r.status] ?? 0) > (STATUS_RANK[b] ?? 0) ? r.status : b,
-    'Not Learned'
-  );
-  await pool.query(
-    `UPDATE tunes SET learning_status = $1 WHERE id = $2 AND user_id = $3`,
-    [best, tuneId, userId]
-  );
-}
-
 async function setTuneInstrumentStatus(tuneId, userId, instrument, status) {
   const { rowCount } = await pool.query(
     `SELECT 1 FROM tunes WHERE id = $1 AND user_id = $2`,
@@ -447,42 +430,23 @@ async function setTuneInstrumentStatus(tuneId, userId, instrument, status) {
      ON CONFLICT (tune_id, instrument) DO UPDATE SET status = EXCLUDED.status`,
     [tuneId, instrument, status]
   );
-  await recomputeTuneLearningStatus(tuneId, userId);
   return getTuneInstrumentStatuses(tuneId, userId);
 }
 
 // Bulk-insert per-instrument rows after a CSV import. Skips conflicts so a
 // re-import doesn't clobber per-instrument changes the user has made since.
-// Runs in a single transaction. Recomputes legacy learning_status once at the
-// end per affected tune (avoids per-row recomputes inside the loop).
+// Runs in a single transaction.
 async function bulkInsertTuneInstrumentStatuses(rows) {
   if (rows.length === 0) return;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const affectedTunes = new Set();
     for (const r of rows) {
       await client.query(
         `INSERT INTO tune_instrument_status (tune_id, instrument, status)
          VALUES ($1, $2, $3)
          ON CONFLICT (tune_id, instrument) DO NOTHING`,
         [r.tune_id, r.instrument, r.status]
-      );
-      affectedTunes.add(r.tune_id);
-    }
-    // Recompute legacy learning_status to best-of for each affected tune.
-    for (const tuneId of affectedTunes) {
-      await client.query(
-        `UPDATE tunes SET learning_status = (
-           SELECT CASE
-             WHEN BOOL_OR(status = 'Memorized') THEN 'Memorized'
-             WHEN BOOL_OR(status = 'Learning') THEN 'Learning'
-             ELSE 'Not Learned'
-           END
-           FROM tune_instrument_status WHERE tune_id = $1
-         )
-         WHERE id = $1`,
-        [tuneId]
       );
     }
     await client.query('COMMIT');
@@ -504,17 +468,15 @@ async function deleteTuneInstrumentStatus(tuneId, userId, instrument) {
     `DELETE FROM tune_instrument_status WHERE tune_id = $1 AND instrument = $2`,
     [tuneId, instrument]
   );
-  await recomputeTuneLearningStatus(tuneId, userId);
   return getTuneInstrumentStatuses(tuneId, userId);
 }
 
 // Reconciles per-instrument rows with the tune's instrument list (a
 // comma-separated string from the form). Adds rows for newly-checked
 // instruments and deletes rows for unchecked ones; existing rows keep their
-// status. Default for newly-added instruments: if the tune has no
-// per-instrument rows yet, adopt the tune's legacy learning_status (so the
-// status survives migration); otherwise default to 'Not Learned'.
-async function syncTuneInstrumentRows(tuneId, userId, instrumentString) {
+// status. Newly-added instruments default to `defaultStatus` (callers pass
+// the form's Learning Status field, or "Not Learned" if none provided).
+async function syncTuneInstrumentRows(tuneId, userId, instrumentString, defaultStatus = 'Not Learned') {
   const instruments = (instrumentString || '')
     .split(',')
     .map(s => s.trim())
@@ -526,15 +488,6 @@ async function syncTuneInstrumentRows(tuneId, userId, instrumentString) {
     [tuneId]
   );
   const existing = new Set(existingRows.map(r => r.instrument));
-
-  let defaultStatus = 'Not Learned';
-  if (existing.size === 0 && desired.size > 0) {
-    const { rows: tuneRows } = await pool.query(
-      `SELECT learning_status FROM tunes WHERE id = $1 AND user_id = $2`,
-      [tuneId, userId]
-    );
-    if (tuneRows[0]?.learning_status) defaultStatus = tuneRows[0].learning_status;
-  }
 
   for (const inst of desired) {
     if (!existing.has(inst)) {
@@ -569,14 +522,10 @@ async function mergeTunes(primaryId, mergeIds, userId) {
       await client.query('ROLLBACK');
       return null;
     }
-    const bestStatus = tunes.reduce((best, t) => {
-      return (STATUS_RANK[t.learning_status] || 0) > (STATUS_RANK[best] || 0)
-        ? t.learning_status : best;
-    }, tunes.find(t => t.id === primaryId).learning_status);
     const totalCount = tunes.reduce((sum, t) => sum + (parseInt(t.count) || 0), 0);
     await client.query(
-      'UPDATE tunes SET count = $1, learning_status = $2 WHERE id = $3 AND user_id = $4',
-      [totalCount, bestStatus, primaryId, userId]
+      'UPDATE tunes SET count = $1 WHERE id = $2 AND user_id = $3',
+      [totalCount, primaryId, userId]
     );
     for (const mergeId of mergeIds) {
       const { rows: setRows } = await client.query(
@@ -621,6 +570,6 @@ module.exports = {
   addTuneImage, getTuneImageList, getTuneImageData, deleteTuneImage,
   mergeTunes,
   getTuneInstrumentStatuses, setTuneInstrumentStatus, deleteTuneInstrumentStatus,
-  syncTuneInstrumentRows, recomputeTuneLearningStatus, bulkInsertTuneInstrumentStatuses,
+  syncTuneInstrumentRows, bulkInsertTuneInstrumentStatuses,
   getSetsByUser, getSetById, createSet, updateSet, deleteSet, patchSet, practiceSet,
 };

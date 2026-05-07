@@ -43,11 +43,14 @@ describe('mergeTunes', () => {
     mockPool.connect.mockResolvedValue(mockClient);
   });
 
-  it('picks the highest learning status, sums counts, and updates the primary', async () => {
+  it('sums counts and updates the primary', async () => {
+    // Phase 6 of design/PerInstrumentStatus.md removed the learning_status
+    // best-of from mergeTunes — that column is no longer written. The only
+    // tune-level column the merge updates now is count.
     const tunes = [
-      { id: 1, learning_status: 'Learning', count: 3 },
-      { id: 2, learning_status: 'Memorized', count: 5 },
-      { id: 3, learning_status: 'Not Learned', count: 1 },
+      { id: 1, count: 3 },
+      { id: 2, count: 5 },
+      { id: 3, count: 1 },
     ];
     let updateParams = null;
     setupQueries([
@@ -58,15 +61,14 @@ describe('mergeTunes', () => {
       { match: /^DELETE FROM tunes WHERE id/, respond: {} },
       { match: /^COMMIT$/, respond: {} },
     ]);
-    mockPool.query.mockResolvedValue({ rows: [{ id: 1, learning_status: 'Memorized', count: 9 }] });
+    mockPool.query.mockResolvedValue({ rows: [{ id: 1, count: 9 }] });
 
     const result = await db.mergeTunes(1, [2, 3], 99);
 
-    expect(updateParams[0]).toBe(9);          // total count
-    expect(updateParams[1]).toBe('Memorized'); // best status
-    expect(updateParams[2]).toBe(1);           // primary id
-    expect(updateParams[3]).toBe(99);          // user id
-    expect(result).toEqual({ id: 1, learning_status: 'Memorized', count: 9 });
+    expect(updateParams[0]).toBe(9);   // total count
+    expect(updateParams[1]).toBe(1);   // primary id
+    expect(updateParams[2]).toBe(99);  // user id
+    expect(result).toEqual({ id: 1, count: 9 });
     expect(mockClient.release).toHaveBeenCalled();
   });
 

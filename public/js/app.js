@@ -81,7 +81,7 @@ function getSortName(name) {
 
 function sortTunes(tunes) {
   return [...tunes].sort((a, b) => {
-    const statusDiff = (STATUS_ORDER[a.learning_status] ?? 2) - (STATUS_ORDER[b.learning_status] ?? 2);
+    const statusDiff = (STATUS_ORDER[bestStatusInfo(a).status] ?? 2) - (STATUS_ORDER[bestStatusInfo(b).status] ?? 2);
     if (statusDiff !== 0) return statusDiff;
     return getSortName(a.name).localeCompare(getSortName(b.name));
   });
@@ -94,14 +94,15 @@ function statusClass(status) {
 }
 
 // For the list-card status badge: picks the best-of status across the tune's
-// per-instrument rows (Memorized > Learning > Not Learned). Falls back to the
-// legacy learning_status when there are no per-instrument rows. Returns
+// per-instrument rows (Memorized > Learning > Not Learned). Returns
 // { status, count, mixed } where `count` is 0/1/many tracked instruments and
-// `mixed` is true when 2+ instruments disagree on status.
+// `mixed` is true when 2+ instruments disagree on status. A tune with no
+// tracked instruments displays as Not Learned (the user can add instruments
+// from the tune detail).
 function bestStatusInfo(tune) {
   const rows = tune.instrument_statuses || [];
   if (rows.length === 0) {
-    return { status: tune.learning_status || 'Not Learned', count: 0, mixed: false };
+    return { status: 'Not Learned', count: 0, mixed: false };
   }
   const STATUS_RANK = { 'Memorized': 2, 'Learning': 1, 'Not Learned': 0 };
   const best = rows.reduce(
@@ -182,32 +183,34 @@ function isSetFilterActive() {
   return f.favoriteOnly || f.types.length > 0;
 }
 
-// Cross-criterion status × instrument check (design/PerInstrumentStatus.md, Phase 4).
+// Cross-criterion status × instrument check (design/PerInstrumentStatus.md,
+// Phases 4 & 6).
 //
-// When BOTH "Learning Status" and "Instrument" filters are set and the tune
-// has per-instrument rows, the criterion is applied to a single row: the tune
-// passes only if some (instrument, status) pair matches both selected lists.
-// "Memorized + D Flute" therefore means "D Flute is specifically Memorized",
-// not the previous independent-AND meaning ("best-of memorized AND playable
-// on D Flute").
-//
-// For status-alone, instrument-alone, or tunes that have no per-instrument
-// rows yet, fall back to the legacy independent-criteria behavior.
+// All three filter modes read from per-instrument rows now that the legacy
+// columns are gone:
+//   - Both selected: tune passes if some row's instrument is in `instruments`
+//     AND its status is in `statuses` ("Memorized + D Flute" means D Flute
+//     specifically Memorized).
+//   - Status alone: tune passes if any tracked instrument has a matching status
+//     ("show memorized tunes" = at least one instrument memorized).
+//   - Instrument alone: tune passes if it tracks any selected instrument.
+// A tune with no per-instrument rows is implicitly Not Learned on no instruments
+// — only matches the "Not Learned" status filter when no instrument is also set.
 function matchesStatusAndInstrument(tune, statuses, instruments) {
   const wantStatus = statuses.length > 0;
   const wantInstrument = instruments.length > 0;
   if (!wantStatus && !wantInstrument) return true;
 
   const rows = tune.instrument_statuses || [];
-  if (wantStatus && wantInstrument && rows.length > 0) {
+  if (wantStatus && wantInstrument) {
     return rows.some(r => instruments.includes(r.instrument) && statuses.includes(r.status));
   }
-  if (wantStatus && !statuses.includes(tune.learning_status || 'Not Learned')) return false;
   if (wantInstrument) {
-    const tuneInstr = (tune.instrument || '').split(',').map(s => s.trim()).filter(Boolean);
-    if (!instruments.some(i => tuneInstr.includes(i))) return false;
+    return rows.some(r => instruments.includes(r.instrument));
   }
-  return true;
+  // wantStatus only.
+  if (rows.length === 0) return statuses.includes('Not Learned');
+  return rows.some(r => statuses.includes(r.status));
 }
 
 function applyTuneFilter(tunes) {
@@ -357,7 +360,7 @@ function renderTuneList(tunes, searchQuery) {
     groups.push({ label: `Favorites (${favorites.length})`, tunes: favorites });
   }
   ['Memorized', 'Learning', 'Not Learned'].forEach(status => {
-    const g = nonFavs.filter(t => (t.learning_status || 'Not Learned') === status);
+    const g = nonFavs.filter(t => bestStatusInfo(t).status === status);
     if (g.length > 0) groups.push({ label: `${status} (${g.length})`, tunes: g });
   });
 
@@ -371,11 +374,15 @@ function renderTuneList(tunes, searchQuery) {
       const sc = statusClass(info.status);
       const typKey = [tune.type, tune.key].filter(Boolean).join(' · ');
       const isFav = tune.favorite ? 'is-favorite' : '';
-      // Tappable cycle for 0 or 1 tracked instruments. For multi-instrument
-      // tunes the badge opens the detail (so the user can pick which
-      // instrument to update).
-      const tappable = info.count <= 1;
-      const title = tappable ? 'Tap to change status' : 'Mixed across instruments — tap to view details';
+      // Tappable cycle only when exactly one instrument is tracked. Zero
+      // instruments → opens the detail (where the user can add one); two or
+      // more → also opens the detail (cycling is ambiguous across rows).
+      const tappable = info.count === 1;
+      const title = tappable
+        ? 'Tap to change status'
+        : info.count === 0
+          ? 'No instruments tracked yet — tap to view details'
+          : 'Mixed across instruments — tap to view details';
       const cycleHint = tappable ? ' ↻' : '';
       const mixedDot = info.mixed ? ' <span class="status-badge-mixed" title="Statuses differ across instruments">•••</span>' : '';
       html += `
@@ -425,21 +432,12 @@ function renderTuneList(tunes, searchQuery) {
       badge.textContent = newStatus + ' ↻';
 
       try {
-        const trackedCount = (tune.instrument_statuses || []).length;
-        if (trackedCount === 1) {
-          // Cycle the single tracked instrument's row. The server recomputes
-          // tunes.learning_status to match (best-of of one row = that row).
-          const inst = tune.instrument_statuses[0].instrument;
-          await API.setTuneInstrumentStatus(tuneId, inst, newStatus);
-          tune.instrument_statuses[0].status = newStatus;
-          tune.learning_status = newStatus;
-        } else {
-          // No tracked instruments: legacy column is the source of truth.
-          // (trackedCount > 1 doesn't reach here — those badges aren't tappable.)
-          const updated = await API.updateTune(tuneId, { ...tune, learning_status: newStatus });
-          const idx = state.tunes.findIndex(t => t.id === tuneId);
-          if (idx !== -1) state.tunes[idx] = updated;
-        }
+        // Only single-instrument tunes are tappable here (count === 1).
+        // Cycle that instrument's row; the list re-render picks up the new
+        // best-of via instrument_statuses.
+        const inst = tune.instrument_statuses[0].instrument;
+        await API.setTuneInstrumentStatus(tuneId, inst, newStatus);
+        tune.instrument_statuses[0].status = newStatus;
         renderTuneList(state.tunes, state.tuneSearch);
       } catch (err) {
         showError('Could not update status: ' + err.message);
@@ -610,9 +608,9 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
     </div>
   </div>`;
 
-  // Always-visible fields
+  // Always-visible fields. Instrument list is shown by the per-instrument
+  // status table above, so it's not duplicated here.
   const visibleFields = [];
-  if (tune.instrument) visibleFields.push(['Instrument', esc(tune.instrument)]);
   if (tune.sequence_id) visibleFields.push(['Sequence ID', esc(tune.sequence_id)]);
   if (tune.mnemonic) visibleFields.push(['Mnemonic', esc(tune.mnemonic)]);
   if (tune.composer) visibleFields.push(['Composer', esc(tune.composer)]);
@@ -879,7 +877,11 @@ function goToTuneForm(tune = null) {
     form.elements['type'].value = tune.type || '';
     form.elements['key'].value = tune.key || '';
     form.elements['parts'].value = tune.parts || '';
-    form.elements['learning_status'].value = tune.learning_status || 'Not Learned';
+    // Prefill the Learning Status dropdown with the tune's best-of (just for
+    // display while editing). On save the dropdown applies only to instruments
+    // newly checked during this edit; existing per-instrument rows keep their
+    // status.
+    form.elements['learning_status'].value = bestStatusInfo(tune).status;
     form.elements['favorite'].checked = !!tune.favorite;
     form.elements['incipit_a'].value = tune.incipit_a || '';
     form.elements['incipit_b'].value = tune.incipit_b || '';
@@ -890,9 +892,9 @@ function goToTuneForm(tune = null) {
     form.elements['where_learned'].value = tune.where_learned || '';
     form.elements['tunebooks'].value = tune.tunebooks || '';
     form.elements['mnemonic'].value = tune.mnemonic || '';
-    const savedInstruments = (tune.instrument || '').split(',').map(s => s.trim()).filter(Boolean);
+    const savedInstruments = new Set((tune.instrument_statuses || []).map(s => s.instrument));
     document.querySelectorAll('#f-instrument input[type="checkbox"]').forEach(cb => {
-      cb.checked = savedInstruments.includes(cb.value);
+      cb.checked = savedInstruments.has(cb.value);
     });
     form.elements['sequence_id'].value = tune.sequence_id || '';
     form.elements['composer'].value = tune.composer || '';
@@ -1277,7 +1279,7 @@ function renderSetFormTuneList(searchQuery) {
   tunes.forEach(tune => {
     const isSelected = state.selectedTuneIds.includes(tune.id);
     const typKey = [tune.type, tune.key].filter(Boolean).join(' · ');
-    const sc = statusClass(tune.learning_status);
+    const sc = statusClass(bestStatusInfo(tune).status);
     html += `
       <div class="list-card ${sc} ${isSelected ? 'selected' : ''}" data-id="${tune.id}" role="button" tabindex="0">
         <div class="tune-card-name">${esc(tune.name)}</div>
@@ -1413,22 +1415,35 @@ function downloadSetImportErrors(errorRows) {
 }
 
 function exportTunesCsv() {
+  // Phase 6: per-instrument columns replace the single Learned column.
+  // Cell vocabulary: X = Memorized, L = Learning, "-" = tracked but Not
+  // Learned, blank = not tracked. The "-" preserves tracking state through
+  // export/import round-trips (a blank cell means the instrument isn't
+  // tracked for that tune).
+  const perInstrumentHeaders = INSTRUMENTS.map(i => `Learned (${i})`);
   const headers = [
     'Name', 'Type', 'Key', 'Parts', 'Incipit A', 'Incipit B', 'Incipit C',
     'Count', 'Added', 'Where', 'Who', 'Mnemonic', 'Tunebooks', 'Date Learned',
-    'Favorite', 'Learned', 'Thesession ID', 'Setting', 'Notes', 'Composer',
+    'Favorite', 'Thesession ID', 'Setting', 'Notes', 'Composer',
     'Last Practiced Date', 'Instrument', 'Sequence ID',
+    ...perInstrumentHeaders,
   ];
-  const rows = state.tunes.map(t => [
-    t.name, t.type, t.key, t.parts,
-    t.incipit_a, t.incipit_b, t.incipit_c,
-    t.count, t.added_date, t.where_learned, t.who,
-    t.mnemonic, t.tunebooks, t.date_learned,
-    t.favorite ? 'X' : '',
-    t.learning_status === 'Memorized' ? 'X' : '',
-    t.thesession_id, t.setting, t.notes, t.composer,
-    t.last_practiced_date, t.instrument, t.sequence_id,
-  ]);
+  const statusToCell = { 'Memorized': 'X', 'Learning': 'L', 'Not Learned': '-' };
+  const rows = state.tunes.map(t => {
+    const byInstrument = {};
+    for (const r of t.instrument_statuses || []) byInstrument[r.instrument] = r.status;
+    const instrumentList = (t.instrument_statuses || []).map(r => r.instrument).join(', ');
+    return [
+      t.name, t.type, t.key, t.parts,
+      t.incipit_a, t.incipit_b, t.incipit_c,
+      t.count, t.added_date, t.where_learned, t.who,
+      t.mnemonic, t.tunebooks, t.date_learned,
+      t.favorite ? 'X' : '',
+      t.thesession_id, t.setting, t.notes, t.composer,
+      t.last_practiced_date, instrumentList, t.sequence_id,
+      ...INSTRUMENTS.map(i => statusToCell[byInstrument[i]] || ''),
+    ];
+  });
   downloadCsv('tunes.csv', headers, rows);
 }
 
@@ -1511,7 +1526,7 @@ function checkTuneDuplicates() {
     html += `<div class="duplicate-group">`;
     html += `<div class="duplicate-reason">${esc(g.reason)}</div>`;
     g.tunes.forEach((t, tIdx) => {
-      const meta = [t.type, t.key, t.learning_status, `count: ${t.count || 0}`].filter(Boolean).join(' · ');
+      const meta = [t.type, t.key, bestStatusInfo(t).status, `count: ${t.count || 0}`].filter(Boolean).join(' · ');
       html += `<label class="duplicate-tune-radio">
         <input type="radio" name="keep-${gIdx}" value="${t.id}"${tIdx === 0 ? ' checked' : ''}>
         <span class="duplicate-tune-radio-text">${esc(t.name)}${meta ? ' — ' + esc(meta) : ''}</span>

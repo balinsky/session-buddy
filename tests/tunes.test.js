@@ -386,8 +386,9 @@ describe('POST /api/tunes/import', () => {
     expect(db.insertManyTunes).toHaveBeenCalledWith(1, expect.arrayContaining([
       expect.objectContaining({ learning_status: 'Memorized', instrument: 'D Flute' }),
     ]));
-    // Legacy path uses syncTuneInstrumentRows to copy legacy status to playable list.
-    expect(db.syncTuneInstrumentRows).toHaveBeenCalledWith(55, 1, 'D Flute');
+    // Legacy path uses syncTuneInstrumentRows with the resolved learning_status
+    // as the default for newly-created per-instrument rows.
+    expect(db.syncTuneInstrumentRows).toHaveBeenCalledWith(55, 1, 'D Flute', 'Memorized');
     expect(db.bulkInsertTuneInstrumentStatuses).not.toHaveBeenCalled();
   });
 
@@ -710,7 +711,9 @@ describe('Tune save: per-instrument sync', () => {
       .post('/api/tunes')
       .set('x-sync-code', SYNC)
       .send({ name: VALID_TUNE.name, instrument: 'D Flute, Concertina' });
-    expect(db.syncTuneInstrumentRows).toHaveBeenCalledWith(VALID_TUNE.id, 1, 'D Flute, Concertina');
+    // The 4th arg is the form's learning_status (used as default for new
+    // per-instrument rows). Undefined when the body doesn't include it.
+    expect(db.syncTuneInstrumentRows).toHaveBeenCalledWith(VALID_TUNE.id, 1, 'D Flute, Concertina', undefined);
   });
 
   it('PUT /api/tunes/:id calls syncTuneInstrumentRows after the update', async () => {
@@ -718,8 +721,8 @@ describe('Tune save: per-instrument sync', () => {
     await request(app)
       .put('/api/tunes/10')
       .set('x-sync-code', SYNC)
-      .send({ name: VALID_TUNE.name, instrument: 'Fiddle' });
-    expect(db.syncTuneInstrumentRows).toHaveBeenCalledWith(VALID_TUNE.id, 1, 'Fiddle');
+      .send({ name: VALID_TUNE.name, instrument: 'Fiddle', learning_status: 'Learning' });
+    expect(db.syncTuneInstrumentRows).toHaveBeenCalledWith(VALID_TUNE.id, 1, 'Fiddle', 'Learning');
   });
 
   it('PATCH /api/tunes/:id only syncs when the body includes an instrument field', async () => {
