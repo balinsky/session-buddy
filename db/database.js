@@ -79,6 +79,18 @@ async function init() {
   // Drop the unique constraint that prevented multiple attachments per tune
   await pool.query(`ALTER TABLE tune_images DROP CONSTRAINT IF EXISTS tune_images_tune_id_key`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tune_images_tune_id ON tune_images(tune_id)`);
+  // Per-instrument learning status (design/PerInstrumentStatus.md). Phase 1:
+  // schema only; UI still reads tunes.learning_status / tunes.instrument as the
+  // source of truth. The compound primary key covers tune_id-leading queries,
+  // so no separate FK index is needed.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tune_instrument_status (
+      tune_id INTEGER NOT NULL REFERENCES tunes(id) ON DELETE CASCADE,
+      instrument TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'Not Learned',
+      PRIMARY KEY (tune_id, instrument)
+    )
+  `);
 }
 
 // --- Users ---
