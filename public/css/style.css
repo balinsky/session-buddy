@@ -368,6 +368,17 @@ html, body {
 .status-btn.active.not-learned { background: var(--status-not-learned-bg); color: var(--status-not-learned-text); }
 .status-btn:not(.active):hover { background: var(--cream); }
 
+/* List-card status badge: small indicator after the badge when statuses
+   differ across instruments. Single character cluster, dim, no interaction. */
+.status-badge-mixed {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 0.85em;
+  letter-spacing: 1px;
+  color: var(--text-muted);
+  vertical-align: baseline;
+}
+
 /* Per-instrument learning status table on tune detail. The table sits inside
    a .detail-card, which already provides background/padding/border-radius —
    no container styling on the table itself. */

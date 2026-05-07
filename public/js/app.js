@@ -93,6 +93,25 @@ function statusClass(status) {
   return 'not-learned';
 }
 
+// For the list-card status badge: picks the best-of status across the tune's
+// per-instrument rows (Memorized > Learning > Not Learned). Falls back to the
+// legacy learning_status when there are no per-instrument rows. Returns
+// { status, count, mixed } where `count` is 0/1/many tracked instruments and
+// `mixed` is true when 2+ instruments disagree on status.
+function bestStatusInfo(tune) {
+  const rows = tune.instrument_statuses || [];
+  if (rows.length === 0) {
+    return { status: tune.learning_status || 'Not Learned', count: 0, mixed: false };
+  }
+  const STATUS_RANK = { 'Memorized': 2, 'Learning': 1, 'Not Learned': 0 };
+  const best = rows.reduce(
+    (b, r) => (STATUS_RANK[r.status] ?? 0) > (STATUS_RANK[b] ?? 0) ? r.status : b,
+    'Not Learned'
+  );
+  const distinct = new Set(rows.map(r => r.status));
+  return { status: best, count: rows.length, mixed: rows.length > 1 && distinct.size > 1 };
+}
+
 function buildAbcString(incipit, tuneType, tuneKey) {
   if (!incipit) return '';
   const meter = METER_BY_TYPE[tuneType] || 'M:4/4';
@@ -324,9 +343,17 @@ function renderTuneList(tunes, searchQuery) {
       html += `<div class="status-group-header">${esc(group.label)}</div>`;
     }
     group.tunes.forEach(tune => {
-      const sc = statusClass(tune.learning_status);
+      const info = bestStatusInfo(tune);
+      const sc = statusClass(info.status);
       const typKey = [tune.type, tune.key].filter(Boolean).join(' · ');
       const isFav = tune.favorite ? 'is-favorite' : '';
+      // Tappable cycle for 0 or 1 tracked instruments. For multi-instrument
+      // tunes the badge opens the detail (so the user can pick which
+      // instrument to update).
+      const tappable = info.count <= 1;
+      const title = tappable ? 'Tap to change status' : 'Mixed across instruments — tap to view details';
+      const cycleHint = tappable ? ' ↻' : '';
+      const mixedDot = info.mixed ? ' <span class="status-badge-mixed" title="Statuses differ across instruments">•••</span>' : '';
       html += `
         <div class="list-card ${sc}" data-id="${tune.id}" role="button" tabindex="0">
           <div class="tune-card-top">
@@ -336,7 +363,7 @@ function renderTuneList(tunes, searchQuery) {
           ${tune.incipit_a ? `<div class="tune-card-incipit">${esc(tune.incipit_a)}</div>` : ''}
           <div class="tune-card-meta">
             ${typKey ? `<span class="tune-card-type-key">${esc(typKey)}</span>` : ''}
-            <span class="status-badge ${sc} tappable" data-id="${tune.id}" data-status="${tune.learning_status || 'Not Learned'}" title="Tap to change status">${esc(tune.learning_status || 'Not Learned')} ↻</span>
+            <span class="status-badge ${sc}${tappable ? ' tappable' : ''}" data-id="${tune.id}" data-status="${info.status}" data-count="${info.count}" title="${title}">${esc(info.status)}${cycleHint}</span>${mixedDot}
             <span class="tune-card-count-row">
               <button class="tune-count-btn tune-count-dec" data-id="${tune.id}" aria-label="Decrease count">−</button>
               <span class="tune-count-value" data-id="${tune.id}">${tune.count || 0}</span>
@@ -367,15 +394,28 @@ function renderTuneList(tunes, searchQuery) {
       const tune = state.tunes.find(t => t.id === tuneId);
       if (!tune) return;
 
+      // Optimistic UI update
       badge.dataset.status = newStatus;
       const newSc = statusClass(newStatus);
       badge.className = `status-badge ${newSc} tappable`;
       badge.textContent = newStatus + ' ↻';
 
       try {
-        const updated = await API.updateTune(tuneId, { ...tune, learning_status: newStatus });
-        const idx = state.tunes.findIndex(t => t.id === tuneId);
-        if (idx !== -1) state.tunes[idx] = updated;
+        const trackedCount = (tune.instrument_statuses || []).length;
+        if (trackedCount === 1) {
+          // Cycle the single tracked instrument's row. The server recomputes
+          // tunes.learning_status to match (best-of of one row = that row).
+          const inst = tune.instrument_statuses[0].instrument;
+          await API.setTuneInstrumentStatus(tuneId, inst, newStatus);
+          tune.instrument_statuses[0].status = newStatus;
+          tune.learning_status = newStatus;
+        } else {
+          // No tracked instruments: legacy column is the source of truth.
+          // (trackedCount > 1 doesn't reach here — those badges aren't tappable.)
+          const updated = await API.updateTune(tuneId, { ...tune, learning_status: newStatus });
+          const idx = state.tunes.findIndex(t => t.id === tuneId);
+          if (idx !== -1) state.tunes[idx] = updated;
+        }
         renderTuneList(state.tunes, state.tuneSearch);
       } catch (err) {
         showError('Could not update status: ' + err.message);

@@ -111,8 +111,26 @@ async function createUser(syncCode) {
 // --- Tunes ---
 
 async function getTunesByUser(userId) {
-  const { rows } = await pool.query('SELECT * FROM tunes WHERE user_id = $1', [userId]);
-  return rows;
+  const { rows: tunes } = await pool.query('SELECT * FROM tunes WHERE user_id = $1', [userId]);
+  if (tunes.length === 0) return tunes;
+  // Attach per-instrument statuses so the list view can compute best-of and
+  // detect multi-instrument tunes (design/PerInstrumentStatus.md, Phase 3).
+  const ids = tunes.map(t => t.id);
+  const { rows: statuses } = await pool.query(
+    `SELECT tune_id, instrument, status
+     FROM tune_instrument_status WHERE tune_id = ANY($1::int[])
+     ORDER BY tune_id, instrument`,
+    [ids]
+  );
+  const byTune = new Map();
+  for (const s of statuses) {
+    if (!byTune.has(s.tune_id)) byTune.set(s.tune_id, []);
+    byTune.get(s.tune_id).push({ instrument: s.instrument, status: s.status });
+  }
+  for (const t of tunes) {
+    t.instrument_statuses = byTune.get(t.id) || [];
+  }
+  return tunes;
 }
 
 async function getTuneById(id, userId) {
