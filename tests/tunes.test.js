@@ -15,9 +15,12 @@ const VALID_TUNE = {
   incipit_a: null, incipit_b: null, incipit_c: null,
 };
 
-// Authenticate successfully by default; individual tests can override
+// Authenticate successfully by default; individual tests can override.
+// findTuneDup defaults to "no duplicate" so POST/PUT tests don't accidentally
+// hit the 409 path from a leftover mock implementation in a prior test.
 beforeEach(() => {
   db.getUserBySyncCode.mockResolvedValue(VALID_USER);
+  db.findTuneDup.mockResolvedValue(null);
 });
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
@@ -106,6 +109,18 @@ describe('POST /api/tunes', () => {
       expect.objectContaining({ name: "Morrison's Jig", type: 'Jig', key: 'Edor' })
     );
   });
+
+  it('returns 409 with conflictingTuneId when findTuneDup reports a duplicate', async () => {
+    db.findTuneDup.mockResolvedValue({ id: 42, reason: 'name "Morrison\'s Jig"' });
+    const res = await request(app)
+      .post('/api/tunes')
+      .set('x-sync-code', 'test-code')
+      .send({ name: "Morrison's Jig", type: 'Jig' });
+    expect(res.status).toBe(409);
+    expect(res.body.conflictingTuneId).toBe(42);
+    expect(res.body.error).toMatch(/already exists/i);
+    expect(db.createTune).not.toHaveBeenCalled();
+  });
 });
 
 // ── PUT /api/tunes/:id ────────────────────────────────────────────────────────
@@ -137,6 +152,19 @@ describe('PUT /api/tunes/:id', () => {
       .send({ name: "Morrison's Jig", key: 'D' });
     expect(res.status).toBe(200);
     expect(res.body.key).toBe('D');
+  });
+
+  it('returns 409 when editing a tune to match another tune\'s identity', async () => {
+    db.findTuneDup.mockResolvedValue({ id: 99, reason: 'Thesession ID 63' });
+    const res = await request(app)
+      .put('/api/tunes/10')
+      .set('x-sync-code', 'test-code')
+      .send({ name: 'Renamed Tune', thesession_id: '63' });
+    expect(res.status).toBe(409);
+    expect(res.body.conflictingTuneId).toBe(99);
+    // Confirm the dup-check excluded the tune being edited (id 10).
+    expect(db.findTuneDup).toHaveBeenCalledWith(1, expect.any(Object), 10);
+    expect(db.updateTune).not.toHaveBeenCalled();
   });
 });
 
@@ -258,6 +286,51 @@ describe('POST /api/tunes/import', () => {
     );
   });
 
+  it('does NOT flag a name match as a duplicate when types disagree', async () => {
+    // The user's collection has a Reel "Last Night's Fun" (SID 63). Importing
+    // the Slip Jig version (SID 5909) should succeed — different tune.
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: "Last Night's Fun", type: 'Reel', thesession_id: '63' },
+    ]);
+    const csv = "Name,Type,Thesession ID\nLast Night's Fun,Slip Jig,5909";
+    db.insertManyTunes.mockResolvedValue([{ id: 200 }]);
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.duplicates).toBe(0);
+  });
+
+  it('still flags a name match when types agree', async () => {
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: "Morrison's Jig", type: 'Jig', thesession_id: '' },
+    ]);
+    const csv = "Name,Type\nMorrison's Jig,Jig";
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.body.imported).toBe(0);
+    expect(res.body.duplicates).toBe(1);
+    expect(res.body.errorRows[0].Errors).toMatch(/already exists/i);
+  });
+
+  it('flags a Thesession ID match regardless of name', async () => {
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: "Old Name", type: 'Reel', thesession_id: '63' },
+    ]);
+    const csv = "Name,Type,Thesession ID\nNew Name,Reel,63";
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.body.imported).toBe(0);
+    expect(res.body.duplicates).toBe(1);
+    expect(res.body.errorRows[0].Errors).toMatch(/Thesession ID 63/);
+  });
+
   it('skips rows where Name is empty', async () => {
     const csv = "Name,Type\nMorrison's Jig,Jig\n,Reel";
     db.insertManyTunes.mockResolvedValue([{ id: 1 }]);
@@ -268,6 +341,51 @@ describe('POST /api/tunes/import', () => {
     const [, tunes] = db.insertManyTunes.mock.calls[0];
     expect(tunes).toHaveLength(1);
     expect(tunes[0].name).toBe("Morrison's Jig");
+  });
+
+  it('does NOT flag a name match as a duplicate when types disagree', async () => {
+    // The user's collection has a Reel called "Last Night's Fun" (SID 63).
+    // Importing the Slip Jig version (SID 5909) should succeed — different tune.
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: "Last Night's Fun", type: 'Reel', thesession_id: '63' },
+    ]);
+    const csv = "Name,Type,Thesession ID\nLast Night's Fun,Slip Jig,5909";
+    db.insertManyTunes.mockResolvedValue([{ id: 200 }]);
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.duplicates).toBe(0);
+  });
+
+  it('still flags a name match when types agree (or one type is missing)', async () => {
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: "Morrison's Jig", type: 'Jig', thesession_id: '' },
+    ]);
+    const csv = "Name,Type\nMorrison's Jig,Jig";
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.body.imported).toBe(0);
+    expect(res.body.duplicates).toBe(1);
+    expect(res.body.errorRows[0].Errors).toMatch(/already exists/i);
+  });
+
+  it('flags a Thesession ID match regardless of name', async () => {
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: "Old Name", type: 'Reel', thesession_id: '63' },
+    ]);
+    const csv = "Name,Type,Thesession ID\nNew Name,Reel,63";
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.body.imported).toBe(0);
+    expect(res.body.duplicates).toBe(1);
+    expect(res.body.errorRows[0].Errors).toMatch(/Thesession ID 63/);
   });
 
   it('returns 400 when every row has an empty Name', async () => {

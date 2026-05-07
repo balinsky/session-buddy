@@ -67,6 +67,17 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
+    const dup = await db.findTuneDup(req.user.id, {
+      name: req.body.name,
+      type: req.body.type,
+      sid: req.body.thesession_id,
+    });
+    if (dup) {
+      return res.status(409).json({
+        error: `A tune with this ${dup.reason} already exists.`,
+        conflictingTuneId: dup.id,
+      });
+    }
     const tune = await db.createTune(req.user.id, req.body);
     // The form's instrument list and learning_status are no longer columns;
     // pass them straight through to the per-instrument sync. Newly-checked
@@ -81,6 +92,17 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
+    const dup = await db.findTuneDup(req.user.id, {
+      name: req.body.name,
+      type: req.body.type,
+      sid: req.body.thesession_id,
+    }, parseInt(req.params.id));
+    if (dup) {
+      return res.status(409).json({
+        error: `A different tune with this ${dup.reason} already exists.`,
+        conflictingTuneId: dup.id,
+      });
+    }
     const tune = await db.updateTune(req.params.id, req.user.id, req.body);
     if (!tune) return res.status(404).json({ error: 'Tune not found.' });
     await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
@@ -260,8 +282,31 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     return res.status(500).json({ error: 'Could not load existing tunes: ' + err.message });
   }
 
-  const existingNames = new Set(existingTunes.map(t => (t.name || '').toLowerCase().trim()).filter(Boolean));
-  const existingSessionIds = new Set(existingTunes.map(t => (t.thesession_id || '').trim()).filter(Boolean));
+  // Index existing tunes by lowercased name and by Thesession ID for dup checks.
+  // existingByName carries per-name {type, sid} so we can refine the name-match
+  // check: a shared name is only a duplicate signal if the existing tune doesn't
+  // disagree on type or on a non-empty Thesession ID. Different tunes sometimes
+  // share a name (e.g. "Last Night's Fun" exists as both a Reel and a Slip Jig).
+  const existingByName = new Map();
+  const existingSessionIds = new Set();
+  for (const t of existingTunes) {
+    const n = (t.name || '').toLowerCase().trim();
+    const s = (t.thesession_id || '').trim();
+    if (n) {
+      if (!existingByName.has(n)) existingByName.set(n, []);
+      existingByName.get(n).push({ type: (t.type || '').trim(), sid: s });
+    }
+    if (s) existingSessionIds.add(s);
+  }
+
+  function nameLooksLikeDup(name, type, sid) {
+    const candidates = existingByName.get(name) || [];
+    return candidates.some(c => {
+      if (type && c.type && type !== c.type) return false;
+      if (sid && c.sid && sid !== c.sid) return false;
+      return true;
+    });
+  }
 
   const toImport = [];
   const errorRows = [];
@@ -269,9 +314,10 @@ router.post('/import', upload.single('csv'), async (req, res) => {
   for (const tune of tunes) {
     const name = (tune.name || '').toLowerCase().trim();
     const sid = (tune.thesession_id || '').trim();
+    const type = (tune.type || '').trim();
     const reasons = [];
 
-    if (name && existingNames.has(name)) reasons.push(`name "${tune.name}" already exists`);
+    if (name && nameLooksLikeDup(name, type, sid)) reasons.push(`name "${tune.name}" already exists`);
     if (sid && existingSessionIds.has(sid)) reasons.push(`Thesession ID ${sid} already exists`);
 
     if (reasons.length > 0) {
@@ -284,7 +330,10 @@ router.post('/import', upload.single('csv'), async (req, res) => {
       });
     } else {
       toImport.push(tune);
-      if (name) existingNames.add(name);
+      if (name) {
+        if (!existingByName.has(name)) existingByName.set(name, []);
+        existingByName.get(name).push({ type, sid });
+      }
       if (sid) existingSessionIds.add(sid);
     }
   }

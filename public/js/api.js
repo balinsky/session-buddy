@@ -28,7 +28,14 @@ const API = (() => {
     } catch {
       throw new Error(`Server returned unexpected response (HTTP ${res.status}): ${text.slice(0, 400)}`);
     }
-    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    if (!res.ok) {
+      const err = new Error(data.error || `Request failed (${res.status})`);
+      err.status = res.status;
+      // Surface response fields on the error so callers can react (e.g.
+      // 409 Conflict from POST/PUT /api/tunes returns conflictingTuneId).
+      if (data && typeof data === 'object') Object.assign(err, data);
+      throw err;
+    }
     return data;
   }
 

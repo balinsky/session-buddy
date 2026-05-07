@@ -954,6 +954,15 @@ async function saveTuneForm(e) {
       await goToTuneDetail(tune.id);
     }
   } catch (e) {
+    if (e.status === 409 && e.conflictingTuneId) {
+      // Duplicate detected. Offer to navigate to the existing tune so the
+      // user can update its characteristics instead of creating a new one.
+      if (confirm(`${e.message}\n\nOpen the existing tune?`)) {
+        state.tunes = await API.getTunes();
+        await goToTuneDetail(e.conflictingTuneId);
+      }
+      return;
+    }
     showError('Could not save tune: ' + e.message);
   }
 }

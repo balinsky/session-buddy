@@ -406,6 +406,49 @@ const STATUS_RANK = { 'Memorized': 2, 'Learning': 1, 'Not Learned': 0 };
 
 // --- Per-instrument learning status (design/PerInstrumentStatus.md, Phase 2) ---
 
+// Unified duplicate check for the user's collection. Used by POST/PUT routes
+// (single tune) and mirrored in the CSV import path (in-memory). Returns
+// `{ id, reason }` for the first matching existing tune, or null.
+//
+// Rules (consistent with the duplicate-checker UI):
+//  - SID match: any non-empty Thesession ID match is a duplicate signal.
+//  - Name match: case-insensitive name equality, AND types don't disagree
+//    (any non-empty types must match), AND non-empty SIDs don't disagree.
+//
+// `excludeId` lets edits skip the tune being edited (otherwise it would
+// collide with itself).
+async function findTuneDup(userId, candidate, excludeId = null) {
+  const sid = (candidate.sid || '').trim();
+  const name = (candidate.name || '').trim();
+  const type = (candidate.type || '').trim();
+
+  if (sid) {
+    const params = [userId, sid];
+    let q = `SELECT id FROM tunes WHERE user_id = $1 AND trim(thesession_id) = $2`;
+    if (excludeId) { q += ' AND id != $3'; params.push(excludeId); }
+    q += ' LIMIT 1';
+    const { rows } = await pool.query(q, params);
+    if (rows[0]) return { id: rows[0].id, reason: `Thesession ID ${sid}` };
+  }
+
+  if (name) {
+    const params = [userId, name.toLowerCase()];
+    let q = `SELECT id, type, trim(thesession_id) AS sid FROM tunes
+             WHERE user_id = $1 AND lower(trim(name)) = $2`;
+    if (excludeId) { q += ' AND id != $3'; params.push(excludeId); }
+    const { rows } = await pool.query(q, params);
+    for (const r of rows) {
+      const candType = (r.type || '').trim();
+      const candSid = r.sid || '';
+      if (type && candType && type !== candType) continue;
+      if (sid && candSid && sid !== candSid) continue;
+      return { id: r.id, reason: `name "${name}"` };
+    }
+  }
+
+  return null;
+}
+
 async function getTuneInstrumentStatuses(tuneId, userId) {
   const { rows } = await pool.query(
     `SELECT tis.instrument, tis.status
@@ -569,6 +612,7 @@ module.exports = {
   getTunesByUser, getTuneById, createTune, updateTune, deleteTune, insertManyTunes,
   addTuneImage, getTuneImageList, getTuneImageData, deleteTuneImage,
   mergeTunes,
+  findTuneDup,
   getTuneInstrumentStatuses, setTuneInstrumentStatus, deleteTuneInstrumentStatus,
   syncTuneInstrumentRows, bulkInsertTuneInstrumentStatuses,
   getSetsByUser, getSetById, createSet, updateSet, deleteSet, patchSet, practiceSet,
