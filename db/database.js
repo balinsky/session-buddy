@@ -95,6 +95,73 @@ async function init() {
       PRIMARY KEY (tune_id, instrument)
     )
   `);
+
+  // --- Classes feature, phase 1 (design/Classes.md) ---------------------
+  // Class is a single event (workshop, retreat session, weekly class
+  // meeting). class_series optionally groups related classes (e.g. a
+  // 6-week course). musician is currently used only as a class instructor;
+  // the broader "replace tunes.who" use case lands later. class_tunes is
+  // the M:N from a class to the tunes it taught; class_instructors is the
+  // M:N from a class to its instructor musicians.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS class_series (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      organizer TEXT,
+      instrument TEXT,
+      date_from DATE,
+      date_to DATE,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS class (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      series_id INTEGER REFERENCES class_series(id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
+      organizer TEXT,
+      instrument TEXT,
+      date DATE,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS musician (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      instruments TEXT,
+      website TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS class_tunes (
+      class_id INTEGER NOT NULL REFERENCES class(id) ON DELETE CASCADE,
+      tune_id INTEGER NOT NULL REFERENCES tunes(id) ON DELETE CASCADE,
+      PRIMARY KEY (class_id, tune_id)
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS class_instructors (
+      class_id INTEGER NOT NULL REFERENCES class(id) ON DELETE CASCADE,
+      musician_id INTEGER NOT NULL REFERENCES musician(id) ON DELETE CASCADE,
+      PRIMARY KEY (class_id, musician_id)
+    )
+  `);
+  // FK indexes (the compound PKs cover the leading-column lookups; the other
+  // direction needs an explicit index for ON DELETE CASCADE efficiency).
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_class_user_id ON class(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_class_series_id ON class(series_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_class_series_user_id ON class_series(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_musician_user_id ON musician(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_class_tunes_tune_id ON class_tunes(tune_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_class_instructors_musician_id ON class_instructors(musician_id)`);
 }
 
 // --- Users ---
