@@ -677,6 +677,223 @@ async function mergeTunes(primaryId, mergeIds, userId) {
   }
 }
 
+// --- Classes / Series / Musicians (design/Classes.md, phase 2) -----------
+
+// Loads a class's nested series, instructors (full musician rows), and
+// tunes. Used by both the list and detail responses; the list version may
+// pass `withTunes: false` if it doesn't need the M:N tune list.
+async function _enrichClass(klass, withTunes = true) {
+  if (!klass) return null;
+  if (klass.series_id) {
+    const { rows } = await pool.query('SELECT * FROM class_series WHERE id = $1', [klass.series_id]);
+    klass.series = rows[0] || null;
+  } else {
+    klass.series = null;
+  }
+  const { rows: instrRows } = await pool.query(
+    `SELECT m.* FROM musician m
+     JOIN class_instructors ci ON ci.musician_id = m.id
+     WHERE ci.class_id = $1
+     ORDER BY m.name`,
+    [klass.id]
+  );
+  klass.instructors = instrRows;
+  if (withTunes) {
+    const { rows: tuneRows } = await pool.query(
+      `SELECT t.* FROM tunes t
+       JOIN class_tunes ct ON ct.tune_id = t.id
+       WHERE ct.class_id = $1
+       ORDER BY t.name`,
+      [klass.id]
+    );
+    klass.tunes = tuneRows;
+  }
+  return klass;
+}
+
+async function getClassesByUser(userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM class WHERE user_id = $1 ORDER BY date DESC NULLS LAST, name',
+    [userId]
+  );
+  return Promise.all(rows.map(c => _enrichClass(c, false)));
+}
+
+async function getClassById(id, userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM class WHERE id = $1 AND user_id = $2',
+    [id, userId]
+  );
+  return _enrichClass(rows[0]);
+}
+
+async function _syncClassTunes(client, classId, tuneIds) {
+  await client.query('DELETE FROM class_tunes WHERE class_id = $1', [classId]);
+  for (const tuneId of tuneIds || []) {
+    await client.query(
+      'INSERT INTO class_tunes (class_id, tune_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [classId, tuneId]
+    );
+  }
+}
+
+async function _syncClassInstructors(client, classId, musicianIds) {
+  await client.query('DELETE FROM class_instructors WHERE class_id = $1', [classId]);
+  for (const musicianId of musicianIds || []) {
+    await client.query(
+      'INSERT INTO class_instructors (class_id, musician_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+      [classId, musicianId]
+    );
+  }
+}
+
+// Creates a class plus its tune and instructor M:N rows in one transaction.
+async function createClass(userId, data) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `INSERT INTO class (user_id, series_id, name, organizer, instrument, date, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [userId, data.series_id || null, data.name, data.organizer || null,
+       data.instrument || null, data.date || null, data.notes || null]
+    );
+    const klass = rows[0];
+    await _syncClassTunes(client, klass.id, data.tune_ids);
+    await _syncClassInstructors(client, klass.id, data.instructor_ids);
+    await client.query('COMMIT');
+    return getClassById(klass.id, userId);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function updateClass(id, userId, data) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `UPDATE class SET series_id=$1, name=$2, organizer=$3, instrument=$4, date=$5, notes=$6
+       WHERE id=$7 AND user_id=$8 RETURNING *`,
+      [data.series_id || null, data.name, data.organizer || null,
+       data.instrument || null, data.date || null, data.notes || null,
+       id, userId]
+    );
+    if (!rows[0]) { await client.query('ROLLBACK'); return null; }
+    if (data.tune_ids !== undefined) await _syncClassTunes(client, id, data.tune_ids);
+    if (data.instructor_ids !== undefined) await _syncClassInstructors(client, id, data.instructor_ids);
+    await client.query('COMMIT');
+    return getClassById(id, userId);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function deleteClass(id, userId) {
+  await pool.query('DELETE FROM class WHERE id = $1 AND user_id = $2', [id, userId]);
+}
+
+// --- Class Series ---
+
+async function getClassSeriesByUser(userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM class_series WHERE user_id = $1 ORDER BY date_from DESC NULLS LAST, name',
+    [userId]
+  );
+  return rows;
+}
+
+async function getClassSeriesById(id, userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM class_series WHERE id = $1 AND user_id = $2',
+    [id, userId]
+  );
+  return rows[0] || null;
+}
+
+async function createClassSeries(userId, data) {
+  const { rows } = await pool.query(
+    `INSERT INTO class_series (user_id, name, organizer, instrument, date_from, date_to, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [userId, data.name, data.organizer || null, data.instrument || null,
+     data.date_from || null, data.date_to || null, data.notes || null]
+  );
+  return rows[0];
+}
+
+async function updateClassSeries(id, userId, data) {
+  const { rows } = await pool.query(
+    `UPDATE class_series SET name=$1, organizer=$2, instrument=$3, date_from=$4, date_to=$5, notes=$6
+     WHERE id=$7 AND user_id=$8 RETURNING *`,
+    [data.name, data.organizer || null, data.instrument || null,
+     data.date_from || null, data.date_to || null, data.notes || null,
+     id, userId]
+  );
+  return rows[0] || null;
+}
+
+async function deleteClassSeries(id, userId) {
+  await pool.query('DELETE FROM class_series WHERE id = $1 AND user_id = $2', [id, userId]);
+}
+
+// --- Musicians ---
+
+async function getMusiciansByUser(userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM musician WHERE user_id = $1 ORDER BY name',
+    [userId]
+  );
+  return rows;
+}
+
+async function getMusicianById(id, userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM musician WHERE id = $1 AND user_id = $2',
+    [id, userId]
+  );
+  if (!rows[0]) return null;
+  // Attach the list of classes this musician taught (for the search-by-instructor
+  // mechanism — answers the design's Q-D).
+  const { rows: classes } = await pool.query(
+    `SELECT c.* FROM class c
+     JOIN class_instructors ci ON ci.class_id = c.id
+     WHERE ci.musician_id = $1 AND c.user_id = $2
+     ORDER BY c.date DESC NULLS LAST, c.name`,
+    [id, userId]
+  );
+  rows[0].classes = classes;
+  return rows[0];
+}
+
+async function createMusician(userId, data) {
+  const { rows } = await pool.query(
+    `INSERT INTO musician (user_id, name, instruments, website, notes)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [userId, data.name, data.instruments || null, data.website || null, data.notes || null]
+  );
+  return rows[0];
+}
+
+async function updateMusician(id, userId, data) {
+  const { rows } = await pool.query(
+    `UPDATE musician SET name=$1, instruments=$2, website=$3, notes=$4
+     WHERE id=$5 AND user_id=$6 RETURNING *`,
+    [data.name, data.instruments || null, data.website || null, data.notes || null,
+     id, userId]
+  );
+  return rows[0] || null;
+}
+
+async function deleteMusician(id, userId) {
+  await pool.query('DELETE FROM musician WHERE id = $1 AND user_id = $2', [id, userId]);
+}
+
 module.exports = {
   init,
   getUserBySyncCode, createUser,
@@ -687,4 +904,7 @@ module.exports = {
   getTuneInstrumentStatuses, setTuneInstrumentStatus, deleteTuneInstrumentStatus,
   syncTuneInstrumentRows, bulkInsertTuneInstrumentStatuses,
   getSetsByUser, getSetById, createSet, updateSet, deleteSet, patchSet, practiceSet,
+  getClassesByUser, getClassById, createClass, updateClass, deleteClass,
+  getClassSeriesByUser, getClassSeriesById, createClassSeries, updateClassSeries, deleteClassSeries,
+  getMusiciansByUser, getMusicianById, createMusician, updateMusician, deleteMusician,
 };

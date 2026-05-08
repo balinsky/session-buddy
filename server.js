@@ -11,6 +11,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/sync', require('./routes/sync'));
 app.use('/api/tunes', require('./routes/tunes'));
 app.use('/api/sets', require('./routes/sets'));
+// Classes router owns both /api/classes/* and /api/class-series/*
+app.use('/api', require('./routes/classes'));
+app.use('/api/musicians', require('./routes/musicians'));
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
