@@ -23,7 +23,6 @@ async function init() {
       incipit_a TEXT,
       incipit_b TEXT,
       incipit_c TEXT,
-      learning_status TEXT DEFAULT 'Not Learned',
       count INTEGER DEFAULT 0,
       added_date TEXT,
       where_learned TEXT,
@@ -56,10 +55,15 @@ async function init() {
     )
   `);
   // Add new columns to existing databases that predate these fields
-  await pool.query(`ALTER TABLE tunes ADD COLUMN IF NOT EXISTS instrument TEXT`);
   await pool.query(`ALTER TABLE tunes ADD COLUMN IF NOT EXISTS sequence_id TEXT`);
   await pool.query(`ALTER TABLE sets ADD COLUMN IF NOT EXISTS favorite INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE sets ADD COLUMN IF NOT EXISTS last_practiced_date TEXT`);
+  // Phase 6 of design/PerInstrumentStatus.md: the legacy single-status and
+  // playable-instrument-list columns are retired. Status and the playable
+  // list both live in tune_instrument_status now. IF EXISTS makes this
+  // idempotent for fresh databases that never had the columns.
+  await pool.query(`ALTER TABLE tunes DROP COLUMN IF EXISTS learning_status`);
+  await pool.query(`ALTER TABLE tunes DROP COLUMN IF EXISTS instrument`);
   // Indexes on foreign keys used in every read operation
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tunes_user_id ON tunes(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_sets_user_id ON sets(user_id)`);
@@ -79,10 +83,10 @@ async function init() {
   // Drop the unique constraint that prevented multiple attachments per tune
   await pool.query(`ALTER TABLE tune_images DROP CONSTRAINT IF EXISTS tune_images_tune_id_key`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tune_images_tune_id ON tune_images(tune_id)`);
-  // Per-instrument learning status (design/PerInstrumentStatus.md). Phase 1:
-  // schema only; UI still reads tunes.learning_status / tunes.instrument as the
-  // source of truth. The compound primary key covers tune_id-leading queries,
-  // so no separate FK index is needed.
+  // Per-instrument learning status (design/PerInstrumentStatus.md). The
+  // compound primary key covers tune_id-leading queries, so no separate FK
+  // index is needed. As of Phase 6, this table is the sole source of truth
+  // for both status and the per-tune playable instrument list.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tune_instrument_status (
       tune_id INTEGER NOT NULL REFERENCES tunes(id) ON DELETE CASCADE,
