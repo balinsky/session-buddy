@@ -1,13 +1,17 @@
 This is a list of items to be done.
+* Classes feature — see design/Classes.md (Class + Class Series + Musician entities, M:N tune↔class, set/tune filter by class, CSV import attaches new classes to existing tunes). 4-phase rollout.
+* OCR for sheet music and Irish ABC images (stretch goal — recognise notation in uploaded images so we can search/render them).
 
 * Add attributes to each of my entities. Ask my AI to "I've added basic attributes and descriptions for my entities. Without adding unnecessary complexity, can you think of important attributes I might be missing, given my app's purpose? Ask me clarifying questions, and suggest changes."
 * Draw the relationships between my entities
 * Activity: Think through the basic operations or actions in the domain, and write those down too.
 * Practice log: track individual practice/play events (tune, date, type of event — practice vs. session play, optional notes). Show a history of events on the tune detail page and allow filtering/summary by date range.
-* Musician entity: a person you play with or learn from. A musician can carry a "teacher" role, but the same person can appear as a teacher in a class and as a fellow player in a session. Replace the free-text "who" field on tunes with a reference to a musician. Fields to consider: name, instrument(s), notes, website/contact.
-* Class entity: a learning event linking a teacher (musician), a location, a date, and one or more tunes taught (no limit on number of tunes). Location should support virtual places — Zoom counts as a location. When implemented, replace the Sequence ID field on tunes with a reference to a class. Note: the existing Sequence ID encodes class metadata in the format PREFIX-SERIES-NUMBER (e.g. DW1-3 = High D Whistle, series 1, class 3); this encoding should inform how class records are displayed or sorted but the structured fields (instrument, series, number) can replace the freeform string.
+* Broader Musician feature: replace the free-text "who" field on tunes with a reference to a musician, capture session-player relationships (a musician can be a teacher in one context and a fellow player in another). Foundation for this lands with Classes Phase 1; the tunes.who replacement and session-player tracking are deferred until after Classes ships.
 
 Already completed:
+* Per-instrument learning status: tunes track Memorized/Learning/Not Learned per instrument. Tune detail shows a per-instrument table with cycle-on-tap and add/remove. List card shows best-of summary with a small indicator when statuses differ. Filter combination "Memorized + Flute" means "memorized on Flute specifically". CSV import gained "Learned (Instrument)" columns; legacy single Learned column kept as a fallback. (design/PerInstrumentStatus.md, 6-phase rollout, commits afc711a → 7d2405d.)
+* Per-tune images: jpg, png, and PDF attachments. Bulk tarball upload matches files to tunes by Thesession ID embedded in the filename. Full-screen viewer with remove button.
+* Unified duplicate detection: name match alone isn't enough — types and Thesession IDs must agree. Same rule applies to CSV import, the duplicate-checker UI, and the website's add-tune / edit-tune flows (which return 409 with conflictingTuneId so the form can offer to open the existing tune).
 * Create an import function for sets. CSV columns Tune 1–5, each a thesession.org ID (optionally #setting). Unmatched rows produce a downloadable error CSV with a description of which tunes to add.
 * The tune filter should also allow the Learned From field to be searchable, just like the Where learned field.
 * When you go back from the Set Detail page, the Sets page should refresh. Currently, if you click the Favorite icon, when you click backwards, the change doesn't show. 
@@ -26,3 +30,4 @@ Already completed:
 * There should be a Filter function that allows you to display only certain Tunes based on various characteristics, such as Favorite staus, Memorized status, key, instrument, Where, Tune type, practiced date.
 * The filter function should also work similarly for sets, based on tune type, favorite status
 * Sets should also have a practiced date that operates much like the tune practice date. When a set is practiced, all the tunes in it should have their practice dates updated to match it
+* We need a duplicate checker for the existing database. If it finds 2 or more  duplicate tunes, it should have a merge button for each set of tunes that is duplicated and offer to merge them. If two tunes are merged, it should inherit the classes that both tunes are associated with. The count should be the sum of the two tunes. The learned status should be the highest status of the group. 
