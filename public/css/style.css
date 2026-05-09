@@ -1229,3 +1229,26 @@ html, body {
 #main-content::-webkit-scrollbar { width: 4px; }
 #main-content::-webkit-scrollbar-track { background: transparent; }
 #main-content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ===== CLASSES (design/Classes.md) ===== */
+.instructor-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: var(--cream, #f5f1e8);
+  border: 1px solid var(--border);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.chip:hover { background: var(--white); }
+
+.series-link {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+.series-link:hover { color: inherit; }
+
+.status-group-header.clickable { cursor: pointer; }
+.status-group-header.clickable:hover { color: var(--text-muted); }

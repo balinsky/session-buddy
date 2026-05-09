@@ -92,5 +92,26 @@ const API = (() => {
       form.append('csv', file);
       return request('POST', '/api/sets/import', form, true);
     },
+
+    // Classes (design/Classes.md, phase 2)
+    getClasses: () => request('GET', '/api/classes'),
+    getClass: (id) => request('GET', `/api/classes/${id}`),
+    createClass: (data) => request('POST', '/api/classes', data),
+    updateClass: (id, data) => request('PUT', `/api/classes/${id}`, data),
+    deleteClass: (id) => request('DELETE', `/api/classes/${id}`),
+
+    // Class series
+    getClassSeries: () => request('GET', '/api/class-series'),
+    getClassSeriesById: (id) => request('GET', `/api/class-series/${id}`),
+    createClassSeries: (data) => request('POST', '/api/class-series', data),
+    updateClassSeries: (id, data) => request('PUT', `/api/class-series/${id}`, data),
+    deleteClassSeries: (id) => request('DELETE', `/api/class-series/${id}`),
+
+    // Musicians (used inline as class instructors)
+    getMusicians: () => request('GET', '/api/musicians'),
+    getMusician: (id) => request('GET', `/api/musicians/${id}`),
+    createMusician: (data) => request('POST', '/api/musicians', data),
+    updateMusician: (id, data) => request('PUT', `/api/musicians/${id}`, data),
+    deleteMusician: (id) => request('DELETE', `/api/musicians/${id}`),
   };
 })();

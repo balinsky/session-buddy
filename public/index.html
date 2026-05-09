@@ -324,6 +324,32 @@
       </div>
 
       <!-- CSV IMPORT -->
+      <!-- CLASSES (design/Classes.md, phase 2) -->
+      <div id="view-classes" class="view">
+        <div class="view-toolbar">
+          <h2>My Classes</h2>
+          <div class="toolbar-actions">
+            <button id="btn-add-class" class="btn btn-small btn-primary" disabled title="Class form comes in the next phase">+ New Class</button>
+          </div>
+        </div>
+        <div id="class-list" class="item-list"></div>
+      </div>
+
+      <!-- CLASS DETAIL -->
+      <div id="view-class-detail" class="view">
+        <div id="class-detail-content"></div>
+      </div>
+
+      <!-- SERIES DETAIL -->
+      <div id="view-series-detail" class="view">
+        <div id="series-detail-content"></div>
+      </div>
+
+      <!-- MUSICIAN DETAIL -->
+      <div id="view-musician-detail" class="view">
+        <div id="musician-detail-content"></div>
+      </div>
+
       <div id="view-import" class="view">
         <h2>Import from CSV</h2>
         <p class="hint">Upload a CSV file with your tunes. New tunes will be added to your existing collection.</p>
@@ -471,6 +497,10 @@
       <button id="nav-sets" class="nav-btn" data-view="sets">
         <span class="nav-icon">&#127925;</span>
         <span class="nav-label">Sets</span>
+      </button>
+      <button id="nav-classes" class="nav-btn" data-view="classes">
+        <span class="nav-icon">&#127891;</span>
+        <span class="nav-label">Classes</span>
       </button>
     </nav>
 

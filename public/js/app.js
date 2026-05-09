@@ -46,6 +46,7 @@ function nextStatus(current) {
 const state = {
   tunes: [],
   sets: [],
+  classes: [],
   editingTune: null,
   editingSet: null,
   selectedTuneIds: [],
@@ -257,6 +258,8 @@ const NAV_SECTION = {
   tunes: 'tunes', 'tune-detail': 'tunes', 'tune-form': 'tunes', import: 'tunes',
   'image-viewer': 'tunes',
   sets: 'sets', 'set-detail': 'sets', 'set-form': 'sets', 'set-import': 'sets',
+  classes: 'classes', 'class-detail': 'classes', 'class-form': 'classes',
+  'series-detail': 'classes', 'musician-detail': 'classes',
 };
 
 function showView(viewId, pushToHistory = true) {
@@ -266,7 +269,7 @@ function showView(viewId, pushToHistory = true) {
   // Nav is always visible except on the welcome screen
   document.getElementById('bottom-nav').classList.toggle('hidden', viewId === 'welcome');
 
-  const showBack = viewId !== 'welcome' && viewId !== 'tunes' && viewId !== 'sets';
+  const showBack = viewId !== 'welcome' && viewId !== 'tunes' && viewId !== 'sets' && viewId !== 'classes';
   document.getElementById('back-btn').classList.toggle('hidden', !showBack);
 
   const activeSection = NAV_SECTION[viewId];
@@ -288,6 +291,9 @@ function showView(viewId, pushToHistory = true) {
 const VIEW_TITLES = {
   'tune-detail': 'Tune Detail',
   'set-detail': 'Set Detail',
+  'class-detail': 'Class Detail',
+  'series-detail': 'Series Detail',
+  'musician-detail': 'Musician',
 };
 
 function goBack() {
@@ -298,6 +304,8 @@ function goBack() {
     goToTunes();
   } else if (prev === 'sets') {
     goToSets();
+  } else if (prev === 'classes') {
+    goToClasses();
   } else {
     showView(prev, false);
     if (VIEW_TITLES[prev]) {
@@ -1341,6 +1349,185 @@ async function deleteSet(set) {
   }
 }
 
+// ===== CLASSES VIEW (design/Classes.md, phase 2) =====
+
+// Effective organizer/instrument: the class value if set, else the series'.
+function effectiveOrganizer(klass) { return klass.organizer || klass.series?.organizer || ''; }
+function effectiveInstrument(klass) { return klass.instrument || klass.series?.instrument || ''; }
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  // The API returns ISO timestamps (YYYY-MM-DDT...). Strip everything after T.
+  return String(dateStr).split('T')[0];
+}
+
+async function goToClasses() {
+  state.backStack = ['classes'];
+  showView('classes', false);
+  document.getElementById('header-title').textContent = 'My Classes';
+  try {
+    const classes = await API.getClasses();
+    state.classes = classes;
+    renderClassesList(classes);
+  } catch (e) {
+    showError('Could not load classes: ' + e.message);
+  }
+}
+
+function renderClassesList(classes) {
+  const container = document.getElementById('class-list');
+  if (!classes || classes.length === 0) {
+    container.innerHTML = '<div class="empty-list"><p>No classes yet.</p><p class="hint">Tap + New Class to add one.</p></div>';
+    return;
+  }
+  // Group by series_id (null bucket holds standalone classes).
+  const bySeries = new Map();
+  const seriesNames = new Map();
+  for (const c of classes) {
+    const sid = c.series_id || null;
+    if (!bySeries.has(sid)) bySeries.set(sid, []);
+    bySeries.get(sid).push(c);
+    if (sid && c.series) seriesNames.set(sid, c.series.name);
+  }
+  // Render: standalone first, then each series group sorted by series name.
+  const ordered = [];
+  if (bySeries.has(null)) ordered.push({ sid: null, name: 'Standalone classes', classes: bySeries.get(null) });
+  for (const [sid, name] of [...seriesNames.entries()].sort((a, b) => a[1].localeCompare(b[1]))) {
+    ordered.push({ sid, name, classes: bySeries.get(sid) });
+  }
+  let html = '';
+  for (const group of ordered) {
+    if (group.sid !== null || classes.some(c => c.series_id)) {
+      // Show a header any time there's at least one series — keeps standalone
+      // classes labeled too. If everything is standalone, hide the header.
+      html += `<div class="status-group-header${group.sid ? ' clickable' : ''}" ${group.sid ? `data-series-id="${group.sid}"` : ''}>${esc(group.name)}</div>`;
+    }
+    for (const c of group.classes) {
+      const inst = c.instructors || [];
+      let instructorLabel = '';
+      if (inst.length === 1) instructorLabel = esc(inst[0].name);
+      else if (inst.length >= 2) instructorLabel = `${esc(inst[0].name)} +${inst.length - 1}`;
+      const meta = [
+        formatDate(c.date),
+        effectiveOrganizer(c),
+        effectiveInstrument(c),
+      ].filter(Boolean).map(esc).join(' · ');
+      html += `
+        <div class="list-card" data-class-id="${c.id}" role="button" tabindex="0">
+          <div class="tune-card-name">${esc(c.name)}</div>
+          ${meta ? `<div class="tune-card-meta"><span class="tune-card-type-key">${meta}</span></div>` : ''}
+          ${instructorLabel ? `<div class="tune-card-meta"><span class="tune-card-type-key">${instructorLabel}</span></div>` : ''}
+        </div>`;
+    }
+  }
+  container.innerHTML = html;
+  container.querySelectorAll('.list-card').forEach(card => {
+    card.addEventListener('click', () => goToClassDetail(Number(card.dataset.classId)));
+  });
+  container.querySelectorAll('.status-group-header.clickable').forEach(h => {
+    h.addEventListener('click', () => goToSeriesDetail(Number(h.dataset.seriesId)));
+  });
+}
+
+async function goToClassDetail(classId) {
+  showView('class-detail');
+  document.getElementById('header-title').textContent = 'Class Detail';
+  try {
+    const klass = await API.getClass(classId);
+    renderClassDetail(klass);
+  } catch (e) {
+    showError('Could not load class: ' + e.message);
+  }
+}
+
+function renderClassDetail(klass) {
+  const container = document.getElementById('class-detail-content');
+  const seriesLine = klass.series
+    ? `<div class="detail-meta"><span class="detail-meta-item series-link" data-series-id="${klass.series.id}">${esc(klass.series.name)} &#8599;</span></div>`
+    : '';
+  const fields = [];
+  const org = effectiveOrganizer(klass);
+  const inst = effectiveInstrument(klass);
+  if (org) fields.push(['Organizer', esc(org)]);
+  if (inst) fields.push(['Instrument', esc(inst)]);
+  if (klass.date) fields.push(['Date', esc(formatDate(klass.date))]);
+  if (klass.notes) fields.push(['Notes', esc(klass.notes)]);
+
+  let html = `
+    <div class="detail-header">
+      ${seriesLine}
+      <div class="detail-title-row">
+        <div class="detail-title">${esc(klass.name)}</div>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-outline btn-small" id="btn-edit-class" disabled title="Editing comes in the next phase">Edit</button>
+        <button class="btn btn-danger btn-small" id="btn-delete-class" disabled title="Delete comes in the next phase">Delete</button>
+      </div>
+    </div>`;
+
+  if (fields.length > 0) {
+    html += `<div class="detail-card"><div class="detail-card-title">Details</div>`;
+    fields.forEach(([label, value]) => {
+      html += `<div class="detail-field"><span class="detail-field-label">${label}</span><span class="detail-field-value">${value}</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Instructors
+  html += `<div class="detail-card"><div class="detail-card-title">Instructors</div>`;
+  if (!klass.instructors || klass.instructors.length === 0) {
+    html += `<div class="hint">No instructors recorded.</div>`;
+  } else {
+    html += `<div class="instructor-chips">`;
+    klass.instructors.forEach(m => {
+      html += `<span class="chip" data-musician-id="${m.id}">${esc(m.name)} &#8599;</span>`;
+    });
+    html += `</div>`;
+  }
+  html += `</div>`;
+
+  // Tunes
+  html += `<div class="detail-card"><div class="detail-card-title">Tunes</div>`;
+  if (!klass.tunes || klass.tunes.length === 0) {
+    html += `<div class="hint">No tunes attached to this class.</div>`;
+  } else {
+    klass.tunes.forEach(t => {
+      const meta = [t.type, t.key].filter(Boolean).join(' · ');
+      html += `<div class="detail-field"><span class="detail-field-value tune-in-set-link" data-tune-id="${t.id}">${esc(t.name)}${meta ? ` <span class="hint">— ${esc(meta)}</span>` : ''} &#8599;</span></div>`;
+    });
+  }
+  html += `</div>`;
+
+  container.innerHTML = html;
+
+  // Wire navigation
+  if (klass.series) {
+    container.querySelector('.series-link').addEventListener('click', () =>
+      goToSeriesDetail(klass.series.id));
+  }
+  container.querySelectorAll('.chip[data-musician-id]').forEach(chip => {
+    chip.addEventListener('click', () => goToMusicianDetail(Number(chip.dataset.musicianId)));
+  });
+  container.querySelectorAll('.tune-in-set-link[data-tune-id]').forEach(link => {
+    link.addEventListener('click', () => goToTuneDetail(Number(link.dataset.tuneId)));
+  });
+}
+
+// Stubs for navigation targets that get fleshed out in Phase 2c/2d.
+async function goToSeriesDetail(seriesId) {
+  showView('series-detail');
+  document.getElementById('header-title').textContent = 'Series Detail';
+  const container = document.getElementById('series-detail-content');
+  container.innerHTML = `<div class="empty-list"><p>Series detail comes in the next phase.</p><p class="hint">id: ${seriesId}</p></div>`;
+}
+
+async function goToMusicianDetail(musicianId) {
+  showView('musician-detail');
+  document.getElementById('header-title').textContent = 'Musician';
+  const container = document.getElementById('musician-detail-content');
+  container.innerHTML = `<div class="empty-list"><p>Musician detail comes in the next phase.</p><p class="hint">id: ${musicianId}</p></div>`;
+}
+
 // ===== CSV IMPORT VIEW =====
 
 function restoreTuneImportUndo() {
@@ -1779,6 +1966,7 @@ function init() {
   // Bottom nav
   document.getElementById('nav-tunes').addEventListener('click', goToTunes);
   document.getElementById('nav-sets').addEventListener('click', goToSets);
+  document.getElementById('nav-classes').addEventListener('click', goToClasses);
 
   // Tune list search
   document.getElementById('tune-search').addEventListener('input', e => {
