@@ -329,7 +329,7 @@
         <div class="view-toolbar">
           <h2>My Classes</h2>
           <div class="toolbar-actions">
-            <button id="btn-add-class" class="btn btn-small btn-primary" disabled title="Class form comes in the next phase">+ New Class</button>
+            <button id="btn-add-class" class="btn btn-small btn-primary">+ New Class</button>
           </div>
         </div>
         <div id="class-list" class="item-list"></div>
@@ -338,6 +338,77 @@
       <!-- CLASS DETAIL -->
       <div id="view-class-detail" class="view">
         <div id="class-detail-content"></div>
+      </div>
+
+      <!-- CLASS FORM -->
+      <div id="view-class-form" class="view">
+        <h2 id="class-form-title">New Class</h2>
+        <form id="class-form" class="form">
+          <div class="form-group">
+            <label for="cf-name">Name *</label>
+            <input id="cf-name" name="name" type="text" required />
+          </div>
+
+          <div class="form-group">
+            <label for="cf-series">Series</label>
+            <div class="series-picker-row">
+              <select id="cf-series" name="series_id"></select>
+              <button type="button" id="cf-new-series-btn" class="btn btn-small btn-outline">+ New</button>
+            </div>
+            <div id="cf-new-series-form" class="quick-create-form hidden">
+              <input id="cf-new-series-name" type="text" placeholder="Series name (required)" />
+              <input id="cf-new-series-organizer" type="text" placeholder="Organizer (e.g. OAIM)" />
+              <select id="cf-new-series-instrument"></select>
+              <input id="cf-new-series-date-from" type="date" placeholder="Start date" />
+              <input id="cf-new-series-date-to" type="date" placeholder="End date" />
+              <div class="form-actions">
+                <button type="button" id="cf-create-series-btn" class="btn btn-small btn-primary">Create series</button>
+                <button type="button" id="cf-cancel-new-series-btn" class="btn btn-small btn-outline">Cancel</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="cf-organizer">Organizer</label>
+            <input id="cf-organizer" name="organizer" type="text" placeholder="Overrides series organizer if set" />
+          </div>
+
+          <div class="form-group">
+            <label for="cf-instrument">Instrument</label>
+            <select id="cf-instrument" name="instrument"></select>
+          </div>
+
+          <div class="form-group">
+            <label for="cf-date">Date</label>
+            <input id="cf-date" name="date" type="date" />
+          </div>
+
+          <div class="form-group">
+            <label>Instructors</label>
+            <div id="cf-instructor-chips" class="instructor-chips"></div>
+            <input id="cf-instructor-input" type="text" placeholder="Type a musician name…" autocomplete="off" />
+            <div id="cf-instructor-suggestions" class="typeahead-suggestions hidden"></div>
+          </div>
+
+          <div class="form-group">
+            <label>Tunes taught</label>
+            <div id="cf-selected-tunes" class="selected-tunes-list"></div>
+            <div class="search-bar">
+              <input id="cf-tune-search" type="search" placeholder="Search tunes to add…" />
+            </div>
+            <div id="cf-tune-list" class="item-list pickable"></div>
+          </div>
+
+          <div class="form-group">
+            <label for="cf-notes">Notes</label>
+            <textarea id="cf-notes" name="notes" rows="3"></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary btn-large">Save Class</button>
+            <button type="button" id="cf-cancel-btn" class="btn btn-outline btn-large">Cancel</button>
+          </div>
+        </form>
       </div>
 
       <!-- SERIES DETAIL -->

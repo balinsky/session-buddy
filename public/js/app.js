@@ -1460,8 +1460,8 @@ function renderClassDetail(klass) {
         <div class="detail-title">${esc(klass.name)}</div>
       </div>
       <div class="detail-actions">
-        <button class="btn btn-outline btn-small" id="btn-edit-class" disabled title="Editing comes in the next phase">Edit</button>
-        <button class="btn btn-danger btn-small" id="btn-delete-class" disabled title="Delete comes in the next phase">Delete</button>
+        <button class="btn btn-outline btn-small" id="btn-edit-class">Edit</button>
+        <button class="btn btn-danger btn-small" id="btn-delete-class">Delete</button>
       </div>
     </div>`;
 
@@ -1511,6 +1511,276 @@ function renderClassDetail(klass) {
   container.querySelectorAll('.tune-in-set-link[data-tune-id]').forEach(link => {
     link.addEventListener('click', () => goToTuneDetail(Number(link.dataset.tuneId)));
   });
+  document.getElementById('btn-edit-class').addEventListener('click', () => goToClassForm(klass));
+  document.getElementById('btn-delete-class').addEventListener('click', () => deleteClassFromDetail(klass));
+}
+
+async function deleteClassFromDetail(klass) {
+  if (!confirm(`Delete "${klass.name}"? This won't delete its tunes or instructors.`)) return;
+  try {
+    await API.deleteClass(klass.id);
+    await goToClasses();
+  } catch (e) {
+    showError('Could not delete class: ' + e.message);
+  }
+}
+
+// ===== CLASS FORM (design/Classes.md, phase 2c) =====
+
+async function goToClassForm(klass = null) {
+  state.classForm = {
+    editing: klass,
+    instructorIds: klass ? klass.instructors.map(m => m.id) : [],
+    tuneIds: klass ? klass.tunes.map(t => t.id) : [],
+    allMusicians: [],
+    allSeries: [],
+  };
+  showView('class-form');
+  document.getElementById('header-title').textContent = klass ? 'Edit Class' : 'New Class';
+  document.getElementById('class-form-title').textContent = klass ? 'Edit Class' : 'New Class';
+
+  // Load reference data the form needs.
+  try {
+    const [series, musicians, tunes] = await Promise.all([
+      API.getClassSeries(), API.getMusicians(),
+      state.tunes.length > 0 ? Promise.resolve(state.tunes) : API.getTunes(),
+    ]);
+    state.classForm.allSeries = series;
+    state.classForm.allMusicians = musicians;
+    if (state.tunes.length === 0) state.tunes = tunes;
+  } catch (e) {
+    showError('Could not load form data: ' + e.message);
+    return;
+  }
+
+  // Populate instrument selects (for the class itself and the new-series form).
+  const instrumentOptions = '<option value="">— No instrument —</option>' +
+    INSTRUMENTS.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('');
+  document.getElementById('cf-instrument').innerHTML = instrumentOptions;
+  document.getElementById('cf-new-series-instrument').innerHTML = instrumentOptions;
+
+  // Populate the series dropdown.
+  renderClassFormSeriesOptions();
+
+  // Hide the inline new-series form (in case it was open from a previous visit).
+  document.getElementById('cf-new-series-form').classList.add('hidden');
+
+  // Prefill basic fields.
+  const form = document.getElementById('class-form');
+  form.elements['name'].value = klass ? klass.name : '';
+  form.elements['series_id'].value = klass && klass.series_id ? String(klass.series_id) : '';
+  form.elements['organizer'].value = klass ? (klass.organizer || '') : '';
+  form.elements['instrument'].value = klass ? (klass.instrument || '') : '';
+  form.elements['date'].value = klass && klass.date ? formatDate(klass.date) : '';
+  form.elements['notes'].value = klass ? (klass.notes || '') : '';
+
+  // Render the dynamic pieces.
+  renderClassFormInstructors();
+  document.getElementById('cf-instructor-input').value = '';
+  hideInstructorSuggestions();
+  renderClassFormSelectedTunes();
+  document.getElementById('cf-tune-search').value = '';
+  renderClassFormTuneList('');
+}
+
+function renderClassFormSeriesOptions(selectId = null) {
+  const select = document.getElementById('cf-series');
+  const all = state.classForm.allSeries;
+  let html = '<option value="">— Standalone class —</option>';
+  for (const s of all) {
+    html += `<option value="${s.id}">${esc(s.name)}${s.organizer ? ` (${esc(s.organizer)})` : ''}</option>`;
+  }
+  select.innerHTML = html;
+  if (selectId) select.value = String(selectId);
+}
+
+function renderClassFormInstructors() {
+  const container = document.getElementById('cf-instructor-chips');
+  const ids = state.classForm.instructorIds;
+  if (ids.length === 0) {
+    container.innerHTML = '<span class="empty-hint">No instructors yet</span>';
+    return;
+  }
+  const byId = new Map(state.classForm.allMusicians.map(m => [m.id, m]));
+  container.innerHTML = ids.map(id => {
+    const m = byId.get(id);
+    if (!m) return '';
+    return `<span class="chip removable" data-id="${id}">${esc(m.name)}<button type="button" class="chip-remove" aria-label="Remove">&times;</button></span>`;
+  }).join('');
+  container.querySelectorAll('.chip-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = Number(e.currentTarget.closest('.chip').dataset.id);
+      state.classForm.instructorIds = state.classForm.instructorIds.filter(x => x !== id);
+      renderClassFormInstructors();
+    });
+  });
+}
+
+function renderInstructorSuggestions(query) {
+  const list = document.getElementById('cf-instructor-suggestions');
+  const q = query.trim().toLowerCase();
+  if (!q) { hideInstructorSuggestions(); return; }
+  const all = state.classForm.allMusicians;
+  const taken = new Set(state.classForm.instructorIds);
+  const matches = all.filter(m =>
+    !taken.has(m.id) && m.name.toLowerCase().includes(q)
+  ).slice(0, 8);
+  const hasExact = all.some(m => m.name.toLowerCase() === q);
+  let html = matches.map(m =>
+    `<div class="typeahead-item" data-id="${m.id}">${esc(m.name)}</div>`
+  ).join('');
+  if (!hasExact) {
+    html += `<div class="typeahead-item typeahead-create" data-create="${esc(query.trim())}">+ Add new musician “${esc(query.trim())}”</div>`;
+  }
+  list.innerHTML = html;
+  list.classList.remove('hidden');
+  list.querySelectorAll('.typeahead-item').forEach(item => {
+    item.addEventListener('click', () => onInstructorSuggestionPicked(item));
+  });
+}
+
+function hideInstructorSuggestions() {
+  document.getElementById('cf-instructor-suggestions').classList.add('hidden');
+}
+
+async function onInstructorSuggestionPicked(item) {
+  if (item.dataset.id) {
+    const id = Number(item.dataset.id);
+    if (!state.classForm.instructorIds.includes(id)) state.classForm.instructorIds.push(id);
+  } else if (item.dataset.create) {
+    try {
+      const created = await API.createMusician({ name: item.dataset.create });
+      state.classForm.allMusicians.push(created);
+      state.classForm.instructorIds.push(created.id);
+    } catch (e) {
+      showError('Could not create musician: ' + e.message);
+      return;
+    }
+  }
+  document.getElementById('cf-instructor-input').value = '';
+  hideInstructorSuggestions();
+  renderClassFormInstructors();
+}
+
+function renderClassFormSelectedTunes() {
+  const container = document.getElementById('cf-selected-tunes');
+  const ids = state.classForm.tuneIds;
+  if (ids.length === 0) {
+    container.innerHTML = '<span class="empty-hint">None selected</span>';
+    return;
+  }
+  const byId = new Map(state.tunes.map(t => [t.id, t]));
+  container.innerHTML = ids.map(id => {
+    const t = byId.get(id);
+    if (!t) return '';
+    return `<div class="selected-tune-item">
+      <span class="tune-name">${esc(t.name)}</span>
+      <button type="button" class="btn-remove-tune" data-id="${id}" aria-label="Remove">&times;</button>
+    </div>`;
+  }).join('');
+  container.querySelectorAll('.btn-remove-tune').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = Number(e.currentTarget.dataset.id);
+      state.classForm.tuneIds = state.classForm.tuneIds.filter(x => x !== id);
+      renderClassFormSelectedTunes();
+      renderClassFormTuneList(document.getElementById('cf-tune-search').value);
+    });
+  });
+}
+
+function renderClassFormTuneList(searchQuery) {
+  const container = document.getElementById('cf-tune-list');
+  const query = (searchQuery || '').toLowerCase().trim();
+  let tunes = sortTunes(state.tunes);
+  if (query) {
+    tunes = tunes.filter(t =>
+      t.name.toLowerCase().includes(query) ||
+      (t.type || '').toLowerCase().includes(query) ||
+      (t.thesession_id || '').toLowerCase().includes(query) ||
+      (t.sequence_id || '').toLowerCase().includes(query)
+    );
+  }
+  if (tunes.length === 0) {
+    container.innerHTML = '<div class="empty-list"><p>No tunes found.</p></div>';
+    return;
+  }
+  const selected = new Set(state.classForm.tuneIds);
+  container.innerHTML = tunes.map(t => {
+    const typKey = [t.type, t.key].filter(Boolean).join(' · ');
+    return `<div class="list-card${selected.has(t.id) ? ' selected' : ''}" data-id="${t.id}" role="button" tabindex="0">
+      <div class="tune-card-name">${esc(t.name)}</div>
+      ${typKey ? `<div class="tune-card-meta"><span class="tune-card-type-key">${esc(typKey)}</span></div>` : ''}
+    </div>`;
+  }).join('');
+  container.querySelectorAll('.list-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id = Number(card.dataset.id);
+      if (state.classForm.tuneIds.includes(id)) {
+        state.classForm.tuneIds = state.classForm.tuneIds.filter(x => x !== id);
+      } else {
+        state.classForm.tuneIds.push(id);
+      }
+      renderClassFormSelectedTunes();
+      renderClassFormTuneList(document.getElementById('cf-tune-search').value);
+    });
+  });
+}
+
+async function saveClassForm(e) {
+  e.preventDefault();
+  const form = document.getElementById('class-form');
+  const name = form.elements['name'].value.trim();
+  if (!name) { showError('Class name is required.'); return; }
+  const data = {
+    name,
+    series_id: form.elements['series_id'].value
+      ? Number(form.elements['series_id'].value)
+      : null,
+    organizer: form.elements['organizer'].value.trim() || null,
+    instrument: form.elements['instrument'].value || null,
+    date: form.elements['date'].value || null,
+    notes: form.elements['notes'].value.trim() || null,
+    instructor_ids: state.classForm.instructorIds,
+    tune_ids: state.classForm.tuneIds,
+  };
+  try {
+    let klass;
+    if (state.classForm.editing) {
+      klass = await API.updateClass(state.classForm.editing.id, data);
+    } else {
+      klass = await API.createClass(data);
+    }
+    await goToClassDetail(klass.id);
+  } catch (err) {
+    showError('Could not save class: ' + err.message);
+  }
+}
+
+async function createSeriesInline() {
+  const name = document.getElementById('cf-new-series-name').value.trim();
+  if (!name) { showError('Series name is required.'); return; }
+  const data = {
+    name,
+    organizer: document.getElementById('cf-new-series-organizer').value.trim() || null,
+    instrument: document.getElementById('cf-new-series-instrument').value || null,
+    date_from: document.getElementById('cf-new-series-date-from').value || null,
+    date_to: document.getElementById('cf-new-series-date-to').value || null,
+  };
+  try {
+    const series = await API.createClassSeries(data);
+    state.classForm.allSeries.push(series);
+    renderClassFormSeriesOptions(series.id);
+    document.getElementById('cf-new-series-form').classList.add('hidden');
+    // Clear the inline form so a second open starts fresh.
+    document.getElementById('cf-new-series-name').value = '';
+    document.getElementById('cf-new-series-organizer').value = '';
+    document.getElementById('cf-new-series-instrument').value = '';
+    document.getElementById('cf-new-series-date-from').value = '';
+    document.getElementById('cf-new-series-date-to').value = '';
+  } catch (err) {
+    showError('Could not create series: ' + err.message);
+  }
 }
 
 // Stubs for navigation targets that get fleshed out in Phase 2c/2d.
@@ -1967,6 +2237,37 @@ function init() {
   document.getElementById('nav-tunes').addEventListener('click', goToTunes);
   document.getElementById('nav-sets').addEventListener('click', goToSets);
   document.getElementById('nav-classes').addEventListener('click', goToClasses);
+
+  // Classes feature: + New Class, form submit, cancel, inline series quick-create.
+  document.getElementById('btn-add-class').addEventListener('click', () => goToClassForm(null));
+  document.getElementById('class-form').addEventListener('submit', saveClassForm);
+  document.getElementById('cf-cancel-btn').addEventListener('click', goBack);
+  document.getElementById('cf-new-series-btn').addEventListener('click', () => {
+    document.getElementById('cf-new-series-form').classList.toggle('hidden');
+  });
+  document.getElementById('cf-cancel-new-series-btn').addEventListener('click', () => {
+    document.getElementById('cf-new-series-form').classList.add('hidden');
+  });
+  document.getElementById('cf-create-series-btn').addEventListener('click', createSeriesInline);
+  document.getElementById('cf-instructor-input').addEventListener('input', (e) => {
+    renderInstructorSuggestions(e.target.value);
+  });
+  // Pressing Enter on the instructor input picks the first suggestion (existing
+  // match if any, else creates a new musician with the typed name).
+  document.getElementById('cf-instructor-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const first = document.querySelector('#cf-instructor-suggestions .typeahead-item');
+      if (first) onInstructorSuggestionPicked(first);
+    }
+  });
+  document.getElementById('cf-instructor-input').addEventListener('blur', () => {
+    // Delay so a click on a suggestion can register before we hide.
+    setTimeout(hideInstructorSuggestions, 150);
+  });
+  document.getElementById('cf-tune-search').addEventListener('input', (e) => {
+    renderClassFormTuneList(e.target.value);
+  });
 
   // Tune list search
   document.getElementById('tune-search').addEventListener('input', e => {

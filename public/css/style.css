@@ -1252,3 +1252,67 @@ html, body {
 
 .status-group-header.clickable { cursor: pointer; }
 .status-group-header.clickable:hover { color: var(--text-muted); }
+
+/* ===== CLASS FORM (design/Classes.md) ===== */
+.series-picker-row { display: flex; gap: 8px; align-items: center; }
+.series-picker-row select { flex: 1; }
+
+.quick-create-form {
+  margin-top: 8px;
+  padding: 12px;
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quick-create-form input,
+.quick-create-form select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  font-size: 0.95rem;
+}
+
+.chip.removable {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chip-remove {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.chip-remove:hover { color: var(--danger, #c33); }
+
+.typeahead-suggestions {
+  margin-top: 4px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  max-height: 200px;
+  overflow-y: auto;
+  box-shadow: var(--shadow);
+}
+
+.typeahead-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.typeahead-item:hover { background: var(--cream); }
+.typeahead-item.typeahead-create { color: var(--green); font-style: italic; }
+
+.list-card.selected {
+  background: var(--green-light);
+  border-left-color: var(--green);
+}
