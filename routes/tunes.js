@@ -83,6 +83,9 @@ router.post('/', async (req, res) => {
     // pass them straight through to the per-instrument sync. Newly-checked
     // instruments adopt learning_status as their starting status.
     await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
+    if (Array.isArray(req.body.class_ids)) {
+      await db.syncTuneClasses(tune.id, req.user.id, req.body.class_ids);
+    }
     res.status(201).json(tune);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -106,6 +109,9 @@ router.put('/:id', async (req, res) => {
     const tune = await db.updateTune(req.params.id, req.user.id, req.body);
     if (!tune) return res.status(404).json({ error: 'Tune not found.' });
     await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
+    if (Array.isArray(req.body.class_ids)) {
+      await db.syncTuneClasses(tune.id, req.user.id, req.body.class_ids);
+    }
     res.json(tune);
   } catch (err) {
     res.status(500).json({ error: err.message });

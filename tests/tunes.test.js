@@ -851,4 +851,31 @@ describe('Tune save: per-instrument sync', () => {
     await request(app).patch('/api/tunes/10').set('x-sync-code', SYNC).send({ instrument: 'Fiddle' });
     expect(db.syncTuneInstrumentRows).toHaveBeenCalled();
   });
+
+  it('POST /api/tunes calls syncTuneClasses when class_ids is in the body', async () => {
+    db.createTune.mockResolvedValue(VALID_TUNE);
+    await request(app)
+      .post('/api/tunes')
+      .set('x-sync-code', SYNC)
+      .send({ name: VALID_TUNE.name, class_ids: [3, 5] });
+    expect(db.syncTuneClasses).toHaveBeenCalledWith(VALID_TUNE.id, 1, [3, 5]);
+  });
+
+  it('POST /api/tunes does NOT call syncTuneClasses when class_ids is omitted', async () => {
+    db.createTune.mockResolvedValue(VALID_TUNE);
+    await request(app)
+      .post('/api/tunes')
+      .set('x-sync-code', SYNC)
+      .send({ name: VALID_TUNE.name });
+    expect(db.syncTuneClasses).not.toHaveBeenCalled();
+  });
+
+  it('PUT /api/tunes/:id calls syncTuneClasses with the body\'s class_ids', async () => {
+    db.updateTune.mockResolvedValue(VALID_TUNE);
+    await request(app)
+      .put('/api/tunes/10')
+      .set('x-sync-code', SYNC)
+      .send({ name: VALID_TUNE.name, class_ids: [7] });
+    expect(db.syncTuneClasses).toHaveBeenCalledWith(VALID_TUNE.id, 1, [7]);
+  });
 });

@@ -212,7 +212,45 @@ async function getTuneById(id, userId) {
      WHERE t.id = $1 AND t.user_id = $2`,
     [id, userId]
   );
-  return rows[0] || null;
+  if (!rows[0]) return null;
+  // Attach the classes this tune belongs to (Phase 2e of design/Classes.md).
+  // Includes the parent series' name so the tune detail can show context
+  // like "OAIM Spring 2025 Whistle — Class 3" without a second round-trip.
+  const { rows: classes } = await pool.query(
+    `SELECT c.id, c.name, c.organizer, c.instrument, c.date, c.series_id,
+      cs.name AS series_name
+     FROM class c
+     JOIN class_tunes ct ON ct.class_id = c.id
+     LEFT JOIN class_series cs ON cs.id = c.series_id
+     WHERE ct.tune_id = $1 AND c.user_id = $2
+     ORDER BY c.date DESC NULLS LAST, c.name`,
+    [id, userId]
+  );
+  rows[0].classes = classes;
+  return rows[0];
+}
+
+// Reconciles a tune's class_tunes rows from the tune side. Mirrors
+// _syncClassTunes (which works from the class side) but used by the tune
+// POST/PUT routes when the body includes class_ids. Verifies each class
+// belongs to the same user before linking — a cross-user link would be a
+// data leak.
+async function syncTuneClasses(tuneId, userId, classIds) {
+  const { rowCount } = await pool.query(
+    'SELECT 1 FROM tunes WHERE id = $1 AND user_id = $2',
+    [tuneId, userId]
+  );
+  if (rowCount === 0) return null;
+  await pool.query('DELETE FROM class_tunes WHERE tune_id = $1', [tuneId]);
+  for (const classId of classIds || []) {
+    await pool.query(
+      `INSERT INTO class_tunes (class_id, tune_id)
+       SELECT $1, $2 FROM class WHERE id = $1 AND user_id = $3
+       ON CONFLICT DO NOTHING`,
+      [classId, tuneId, userId]
+    );
+  }
+  return true;
 }
 
 // Per-tune column list. Status & playable instruments live in the
@@ -912,6 +950,7 @@ module.exports = {
   findTuneDup,
   getTuneInstrumentStatuses, setTuneInstrumentStatus, deleteTuneInstrumentStatus,
   syncTuneInstrumentRows, bulkInsertTuneInstrumentStatuses,
+  syncTuneClasses,
   getSetsByUser, getSetById, createSet, updateSet, deleteSet, patchSet, practiceSet,
   getClassesByUser, getClassById, createClass, updateClass, deleteClass,
   getClassSeriesByUser, getClassSeriesById, createClassSeries, updateClassSeries, deleteClassSeries,

@@ -61,14 +61,20 @@ describe('mergeTunes', () => {
       { match: /^DELETE FROM tunes WHERE id/, respond: {} },
       { match: /^COMMIT$/, respond: {} },
     ]);
-    mockPool.query.mockResolvedValue({ rows: [{ id: 1, count: 9 }] });
+    // Two pool.query calls happen inside mergeTunes' final getTuneById:
+    //   1. SELECT t.*, EXISTS(...) FROM tunes ...        → return the row
+    //   2. SELECT ... FROM class JOIN class_tunes ...    → return [] (no classes)
+    mockPool.query.mockImplementation((sql) => {
+      if (/class_tunes/.test(sql)) return Promise.resolve({ rows: [] });
+      return Promise.resolve({ rows: [{ id: 1, count: 9 }] });
+    });
 
     const result = await db.mergeTunes(1, [2, 3], 99);
 
     expect(updateParams[0]).toBe(9);   // total count
     expect(updateParams[1]).toBe(1);   // primary id
     expect(updateParams[2]).toBe(99);  // user id
-    expect(result).toEqual({ id: 1, count: 9 });
+    expect(result).toMatchObject({ id: 1, count: 9 });
     expect(mockClient.release).toHaveBeenCalled();
   });
 

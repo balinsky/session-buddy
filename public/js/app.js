@@ -647,6 +647,17 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
       </div>
     </div>`;
 
+  // Classes (Phase 2e of design/Classes.md). Each entry links to its
+  // class detail; the series name sits underneath as context.
+  if (tune.classes && tune.classes.length > 0) {
+    html += `<div class="detail-card"><div class="detail-card-title">Classes</div>`;
+    tune.classes.forEach(c => {
+      const sub = [c.series_name, formatDate(c.date)].filter(Boolean).join(' · ');
+      html += `<div class="detail-field"><span class="detail-field-value tune-in-set-link" data-tune-class-id="${c.id}">${esc(c.name)}${sub ? ` <span class="hint">— ${esc(sub)}</span>` : ''} &#8599;</span></div>`;
+    });
+    html += `</div>`;
+  }
+
   // Hidden fields
   const hiddenFields = [];
   if (tune.who) hiddenFields.push(['Learned from', esc(tune.who)]);
@@ -702,6 +713,11 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
 
   // Add Tune / Add to Set
   document.getElementById('btn-add-tune-from-detail').addEventListener('click', () => goToTuneForm(null));
+
+  // Classes section: each entry links to its class detail.
+  container.querySelectorAll('[data-tune-class-id]').forEach(link => {
+    link.addEventListener('click', () => goToClassDetail(Number(link.dataset.tuneClassId)));
+  });
   document.getElementById('btn-add-to-set').addEventListener('click', () => goToSetForm(null, tune.id));
   document.getElementById('btn-edit-tune').addEventListener('click', () => goToTuneForm(tune));
   document.getElementById('btn-delete-tune').addEventListener('click', () => deleteTune(tune));
@@ -872,8 +888,10 @@ function goToImageViewer(tuneId, imageId, mimeType, filename) {
 
 // ===== TUNE FORM =====
 
-function goToTuneForm(tune = null) {
+async function goToTuneForm(tune = null) {
   state.editingTune = tune;
+  state.tuneFormClassIds = tune && tune.classes ? tune.classes.map(c => c.id) : [];
+  state.tuneFormAllClasses = [];
   showView('tune-form');
   document.getElementById('header-title').textContent = tune ? 'Edit Tune' : 'Add Tune';
   document.getElementById('tune-form-title').textContent = tune ? 'Edit Tune' : 'Add Tune';
@@ -920,6 +938,76 @@ function goToTuneForm(tune = null) {
       });
     });
   }
+
+  // Classes typeahead — load the user's classes (cached on each form open).
+  document.getElementById('f-class-input').value = '';
+  hideTuneFormClassSuggestions();
+  try {
+    state.tuneFormAllClasses = await API.getClasses();
+  } catch (e) {
+    showError('Could not load classes for picker: ' + e.message);
+    state.tuneFormAllClasses = [];
+  }
+  renderTuneFormClassChips();
+}
+
+function renderTuneFormClassChips() {
+  const container = document.getElementById('f-class-chips');
+  const ids = state.tuneFormClassIds || [];
+  if (ids.length === 0) {
+    container.innerHTML = '<span class="empty-hint">No classes attached</span>';
+    return;
+  }
+  const byId = new Map((state.tuneFormAllClasses || []).map(c => [c.id, c]));
+  container.innerHTML = ids.map(id => {
+    const c = byId.get(id);
+    if (!c) return '';
+    const sub = c.series ? c.series.name : '';
+    return `<span class="chip removable" data-id="${id}" title="${sub ? esc(sub) : ''}">${esc(c.name)}<button type="button" class="chip-remove" aria-label="Remove">&times;</button></span>`;
+  }).join('');
+  container.querySelectorAll('.chip-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = Number(e.currentTarget.closest('.chip').dataset.id);
+      state.tuneFormClassIds = state.tuneFormClassIds.filter(x => x !== id);
+      renderTuneFormClassChips();
+    });
+  });
+}
+
+function renderTuneFormClassSuggestions(query) {
+  const list = document.getElementById('f-class-suggestions');
+  const q = (query || '').trim().toLowerCase();
+  if (!q) { hideTuneFormClassSuggestions(); return; }
+  const all = state.tuneFormAllClasses || [];
+  const taken = new Set(state.tuneFormClassIds || []);
+  const matches = all.filter(c => {
+    if (taken.has(c.id)) return false;
+    if (c.name.toLowerCase().includes(q)) return true;
+    if (c.series && c.series.name.toLowerCase().includes(q)) return true;
+    return false;
+  }).slice(0, 8);
+  if (matches.length === 0) {
+    list.innerHTML = `<div class="typeahead-item typeahead-create" style="cursor:default">No matching classes — create one in the Classes tab first.</div>`;
+  } else {
+    list.innerHTML = matches.map(c => {
+      const sub = c.series ? c.series.name : '';
+      return `<div class="typeahead-item" data-id="${c.id}">${esc(c.name)}${sub ? ` <span class="hint">— ${esc(sub)}</span>` : ''}</div>`;
+    }).join('');
+  }
+  list.classList.remove('hidden');
+  list.querySelectorAll('[data-id]').forEach(item => {
+    item.addEventListener('click', () => {
+      const id = Number(item.dataset.id);
+      if (!state.tuneFormClassIds.includes(id)) state.tuneFormClassIds.push(id);
+      document.getElementById('f-class-input').value = '';
+      hideTuneFormClassSuggestions();
+      renderTuneFormClassChips();
+    });
+  });
+}
+
+function hideTuneFormClassSuggestions() {
+  document.getElementById('f-class-suggestions').classList.add('hidden');
 }
 
 async function saveTuneForm(e) {
@@ -949,6 +1037,7 @@ async function saveTuneForm(e) {
     date_learned: form.elements['date_learned'].value.trim(),
     last_practiced_date: form.elements['last_practiced_date'].value.trim(),
     notes: form.elements['notes'].value.trim(),
+    class_ids: state.tuneFormClassIds || [],
   };
 
   if (!data.name) { showError('Tune name is required.'); return; }
@@ -2661,6 +2750,21 @@ function init() {
   // Tune form
   document.getElementById('tune-form').addEventListener('submit', saveTuneForm);
   document.getElementById('btn-cancel-tune-form').addEventListener('click', goBack);
+
+  // Tune form classes typeahead.
+  document.getElementById('f-class-input').addEventListener('input', (e) => {
+    renderTuneFormClassSuggestions(e.target.value);
+  });
+  document.getElementById('f-class-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const first = document.querySelector('#f-class-suggestions .typeahead-item[data-id]');
+      if (first) first.click();
+    }
+  });
+  document.getElementById('f-class-input').addEventListener('blur', () => {
+    setTimeout(hideTuneFormClassSuggestions, 150);
+  });
 
   // Live ABC preview in tune form
   document.querySelectorAll('.abc-input').forEach(input => {
