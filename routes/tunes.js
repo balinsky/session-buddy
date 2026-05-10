@@ -269,6 +269,8 @@ router.post('/import', upload.single('csv'), async (req, res) => {
         // Carried alongside the tune for the post-insert per-instrument pass.
         // db.insertManyTunes ignores fields it doesn't recognize.
         _instrumentStatuses,
+        // Phase 4: optional class name from CSV (find-or-create on import).
+        _className: col(row, 'Class').trim(),
       };
     })
     .filter(t => t.name.length > 0);
@@ -288,34 +290,57 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     return res.status(500).json({ error: 'Could not load existing tunes: ' + err.message });
   }
 
-  // Index existing tunes by lowercased name and by Thesession ID for dup checks.
-  // existingByName carries per-name {type, sid} so we can refine the name-match
-  // check: a shared name is only a duplicate signal if the existing tune doesn't
-  // disagree on type or on a non-empty Thesession ID. Different tunes sometimes
-  // share a name (e.g. "Last Night's Fun" exists as both a Reel and a Slip Jig).
+  // Index existing tunes for dup checks. Store full tune objects so that when a
+  // CSV row is a dup with a Class column, we can find the existing tune's id to
+  // attach the class (design/Classes.md, Phase 4).
+  //
+  // existingByName maps lowercased name → tune[]. Multiple entries are possible
+  // when different tunes share a name (e.g. "Last Night's Fun" as Reel and Slip
+  // Jig): a shared name is only a dup signal when types and SIDs don't disagree.
   const existingByName = new Map();
-  const existingSessionIds = new Set();
+  const existingBySid = new Map();
   for (const t of existingTunes) {
     const n = (t.name || '').toLowerCase().trim();
     const s = (t.thesession_id || '').trim();
     if (n) {
       if (!existingByName.has(n)) existingByName.set(n, []);
-      existingByName.get(n).push({ type: (t.type || '').trim(), sid: s });
+      existingByName.get(n).push(t);
     }
-    if (s) existingSessionIds.add(s);
+    if (s) existingBySid.set(s, t);
   }
 
   function nameLooksLikeDup(name, type, sid) {
     const candidates = existingByName.get(name) || [];
-    return candidates.some(c => {
-      if (type && c.type && type !== c.type) return false;
-      if (sid && c.sid && sid !== c.sid) return false;
+    return candidates.some(t => {
+      const ct = (t.type || '').trim();
+      const cs = (t.thesession_id || '').trim();
+      if (type && ct && type !== ct) return false;
+      if (sid && cs && sid !== cs) return false;
       return true;
     });
   }
 
+  // Returns the existing tune that matches by SID (preferred) or name.
+  function findExistingTune(name, sid, type) {
+    if (sid) {
+      const bySid = existingBySid.get(sid);
+      if (bySid) return bySid;
+    }
+    const candidates = (existingByName.get(name) || []).filter(t => {
+      const ct = (t.type || '').trim();
+      const cs = (t.thesession_id || '').trim();
+      if (type && ct && type !== ct) return false;
+      if (sid && cs && sid !== cs) return false;
+      return true;
+    });
+    return candidates[0] || null;
+  }
+
   const toImport = [];
   const errorRows = [];
+  // Phase 4: rows where the CSV tune matched an existing tune AND had a Class
+  // column — the class is attached rather than skipping the row.
+  const classAttachPending = [];
 
   for (const tune of tunes) {
     const name = (tune.name || '').toLowerCase().trim();
@@ -324,23 +349,31 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     const reasons = [];
 
     if (name && nameLooksLikeDup(name, type, sid)) reasons.push(`name "${tune.name}" already exists`);
-    if (sid && existingSessionIds.has(sid)) reasons.push(`Thesession ID ${sid} already exists`);
+    if (sid && existingBySid.has(sid)) reasons.push(`Thesession ID ${sid} already exists`);
 
     if (reasons.length > 0) {
-      errorRows.push({
-        Name: tune.name,
-        Type: tune.type || '',
-        Key: tune.key || '',
-        'Thesession ID': tune.thesession_id || '',
-        Errors: reasons.join('; '),
-      });
+      if (tune._className) {
+        // Dup row with a class — attach the class to the existing tune instead
+        // of skipping the row.
+        const existingTune = findExistingTune(name, sid, type);
+        classAttachPending.push({ tune, existingTuneId: existingTune ? existingTune.id : null });
+      } else {
+        errorRows.push({
+          Name: tune.name,
+          Type: tune.type || '',
+          Key: tune.key || '',
+          'Thesession ID': tune.thesession_id || '',
+          Errors: reasons.join('; '),
+          Notes: '',
+        });
+      }
     } else {
       toImport.push(tune);
       if (name) {
         if (!existingByName.has(name)) existingByName.set(name, []);
-        existingByName.get(name).push({ type, sid });
+        existingByName.get(name).push(tune);
       }
-      if (sid) existingSessionIds.add(sid);
+      if (sid) existingBySid.set(sid, tune);
     }
   }
 
@@ -371,10 +404,41 @@ router.post('/import', upload.single('csv'), async (req, res) => {
       }
     }
 
+    // Phase 4: attach classes to newly-imported tunes and to existing tunes
+    // matched via classAttachPending. Each class name is found-or-created.
+    let classesAttached = 0;
+    const classAttachRows = [];  // entries shown in the "notes" download
+
+    // New tunes that have a Class column
+    for (let i = 0; i < imported.length; i++) {
+      const className = toImport[i]._className;
+      if (!className) continue;
+      const klass = await db.findOrCreateClassByName(req.user.id, className);
+      await db.attachTuneToClass(imported[i].id, klass.id);
+      classesAttached++;
+    }
+
+    // Existing tunes where the dup row had a Class column
+    for (const { tune, existingTuneId } of classAttachPending) {
+      const note = { Name: tune.name, Type: tune.type || '', Key: tune.key || '',
+        'Thesession ID': tune.thesession_id || '', Errors: '', Notes: '' };
+      if (!existingTuneId) {
+        note.Notes = `Could not locate existing tune to attach class "${tune._className}"`;
+      } else {
+        const klass = await db.findOrCreateClassByName(req.user.id, tune._className);
+        await db.attachTuneToClass(existingTuneId, klass.id);
+        classesAttached++;
+        note.Notes = `Class "${tune._className}" attached to existing tune`;
+      }
+      classAttachRows.push(note);
+    }
+
     res.json({
       imported: imported.length,
       duplicates: errorRows.length,
+      classesAttached,
       errorRows,
+      classAttachRows,
       createdIds: imported.map(t => t.id),
       perInstrumentMode: usePerInstrument,
     });

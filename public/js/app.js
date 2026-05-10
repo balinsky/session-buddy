@@ -2393,9 +2393,12 @@ async function exportSetsCsv() {
   downloadCsv('sets.csv', headers, rows);
 }
 
-function downloadTuneImportErrors(errorRows) {
-  const headers = ['Name', 'Type', 'Key', 'Thesession ID', 'Errors'];
-  const rows = errorRows.map(r => [r.Name, r.Type, r.Key, r['Thesession ID'], r.Errors]);
+function downloadTuneImportErrors(errorRows, classAttachRows) {
+  // Merge skipped dups and class-attach notes into one downloadable CSV.
+  // "Errors" column = dup reason; "Notes" column = class-attach description.
+  const headers = ['Name', 'Type', 'Key', 'Thesession ID', 'Errors', 'Notes'];
+  const all = [...(errorRows || []), ...(classAttachRows || [])];
+  const rows = all.map(r => [r.Name, r.Type, r.Key, r['Thesession ID'], r.Errors || '', r.Notes || '']);
   downloadCsv('tune-import-errors.csv', headers, rows);
 }
 
@@ -2968,21 +2971,25 @@ function init() {
       const result = await API.importCsv(file);
       const n = result.imported;
       const d = result.duplicates || 0;
+      const k = result.classesAttached || 0;
       const parts = [];
       if (n > 0) parts.push(`${n} tune${n !== 1 ? 's' : ''} imported`);
       if (d > 0) parts.push(`${d} duplicate${d !== 1 ? 's' : ''} skipped`);
+      if (k > 0) parts.push(`${k} class link${k !== 1 ? 's' : ''} added`);
       if (parts.length === 0) parts.push('No tunes imported');
       statusEl.textContent = parts.join(', ') + '.';
-      statusEl.className = n > 0 ? 'import-status success' : 'import-status error';
-      if (n === 0 && d === 0) runImportBtn.disabled = false;
+      statusEl.className = (n > 0 || k > 0) ? 'import-status success' : 'import-status error';
+      if (n === 0 && d === 0 && k === 0) runImportBtn.disabled = false;
       state.tunes = await API.getTunes();
       if (n > 0 && result.createdIds?.length > 0) {
         localStorage.setItem('lastTuneImport', JSON.stringify({ createdIds: result.createdIds, count: n }));
         restoreTuneImportUndo();
       }
-      if (d > 0 && result.errorRows?.length > 0) {
+      const hasDownload = (result.errorRows?.length > 0) || (result.classAttachRows?.length > 0);
+      if (hasDownload) {
         document.getElementById('import-error-section').classList.remove('hidden');
-        document.getElementById('btn-download-tune-errors').onclick = () => downloadTuneImportErrors(result.errorRows);
+        document.getElementById('btn-download-tune-errors').onclick = () =>
+          downloadTuneImportErrors(result.errorRows, result.classAttachRows);
       }
     } catch (e) {
       statusEl.textContent = 'Import failed: ' + e.message;

@@ -265,6 +265,32 @@ async function syncTuneClasses(tuneId, userId, classIds) {
   return true;
 }
 
+// Find a class by name (case-insensitive) for this user, creating it if absent.
+// Used by CSV import (design/Classes.md, Phase 4) — newly created classes have
+// no instructors, instrument, or date; those can be filled in via the UI later.
+async function findOrCreateClassByName(userId, name) {
+  const { rows } = await pool.query(
+    'SELECT * FROM class WHERE user_id = $1 AND LOWER(name) = LOWER($2)',
+    [userId, name]
+  );
+  if (rows[0]) return rows[0];
+  const { rows: created } = await pool.query(
+    'INSERT INTO class (user_id, name) VALUES ($1, $2) RETURNING *',
+    [userId, name]
+  );
+  return created[0];
+}
+
+// Idempotent: attach a tune to a class. Safe to call even if the link already
+// exists (ON CONFLICT DO NOTHING). No ownership check — callers must verify
+// both the tune and class belong to the same user before calling.
+async function attachTuneToClass(tuneId, classId) {
+  await pool.query(
+    'INSERT INTO class_tunes (class_id, tune_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
+    [classId, tuneId]
+  );
+}
+
 // Per-tune column list. Status & playable instruments live in the
 // tune_instrument_status table (Phase 6 of design/PerInstrumentStatus.md);
 // the legacy `learning_status` and `instrument` columns are no longer read or
@@ -978,7 +1004,7 @@ module.exports = {
   findTuneDup,
   getTuneInstrumentStatuses, setTuneInstrumentStatus, deleteTuneInstrumentStatus,
   syncTuneInstrumentRows, bulkInsertTuneInstrumentStatuses,
-  syncTuneClasses,
+  syncTuneClasses, findOrCreateClassByName, attachTuneToClass,
   getSetsByUser, getSetById, createSet, updateSet, deleteSet, patchSet, practiceSet,
   getClassesByUser, getClassById, createClass, updateClass, deleteClass,
   getClassSeriesByUser, getClassSeriesById, createClassSeries, updateClassSeries, deleteClassSeries,

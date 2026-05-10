@@ -18,9 +18,13 @@ const VALID_TUNE = {
 // Authenticate successfully by default; individual tests can override.
 // findTuneDup defaults to "no duplicate" so POST/PUT tests don't accidentally
 // hit the 409 path from a leftover mock implementation in a prior test.
+// Phase 4: findOrCreateClassByName / attachTuneToClass default to no-op so
+// import tests that don't care about classes don't need to set them up.
 beforeEach(() => {
   db.getUserBySyncCode.mockResolvedValue(VALID_USER);
   db.findTuneDup.mockResolvedValue(null);
+  db.findOrCreateClassByName.mockResolvedValue({ id: 99, name: 'Test Class' });
+  db.attachTuneToClass.mockResolvedValue(undefined);
 });
 
 // ── Auth middleware ───────────────────────────────────────────────────────────
@@ -519,6 +523,74 @@ describe('POST /api/tunes/import', () => {
       .attach('csv', Buffer.from(csv), 'tunes.csv');
     expect(res.body.perInstrumentMode).toBe(true);
     expect(db.bulkInsertTuneInstrumentStatuses).toHaveBeenCalled();
+  });
+
+  // ── Phase 4: Class column ──────────────────────────────────────────────────
+
+  it('attaches a class to a new tune and returns classesAttached=1', async () => {
+    const csv = "Name,Class\nMorrison's Jig,OAIM Whistle";
+    db.insertManyTunes.mockResolvedValue([{ id: 77 }]);
+    db.findOrCreateClassByName.mockResolvedValue({ id: 5, name: 'OAIM Whistle' });
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.classesAttached).toBe(1);
+    expect(db.findOrCreateClassByName).toHaveBeenCalledWith(1, 'OAIM Whistle');
+    expect(db.attachTuneToClass).toHaveBeenCalledWith(77, 5);
+  });
+
+  it('does not call attachTuneToClass when Class column is blank on a new tune', async () => {
+    const csv = "Name,Class\nMorrison's Jig,";
+    db.insertManyTunes.mockResolvedValue([{ id: 78 }]);
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.body.classesAttached).toBe(0);
+    expect(db.findOrCreateClassByName).not.toHaveBeenCalled();
+    expect(db.attachTuneToClass).not.toHaveBeenCalled();
+  });
+
+  it('attaches a class to an existing (dup) tune instead of skipping it', async () => {
+    // "Morrison's Jig" already exists (id 100). The CSV row is a name-dup but
+    // has a Class column — the class should be attached and the row should NOT
+    // count as a skipped duplicate.
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: "Morrison's Jig", type: 'Jig', thesession_id: '' },
+    ]);
+    db.findOrCreateClassByName.mockResolvedValue({ id: 7, name: 'Kevin Crawford Retreat' });
+    const csv = "Name,Type,Class\nMorrison's Jig,Jig,Kevin Crawford Retreat";
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(0);      // no new tunes
+    expect(res.body.duplicates).toBe(0);    // NOT counted as a skipped dup
+    expect(res.body.classesAttached).toBe(1);
+    expect(res.body.classAttachRows).toHaveLength(1);
+    expect(res.body.classAttachRows[0].Notes).toMatch(/Kevin Crawford Retreat/);
+    expect(db.attachTuneToClass).toHaveBeenCalledWith(100, 7);
+  });
+
+  it('counts a dup WITHOUT a class as a normal skipped duplicate', async () => {
+    // Regression: dup rows with NO Class column should still end up in errorRows.
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: "Morrison's Jig", type: 'Jig', thesession_id: '' },
+    ]);
+    const csv = "Name,Type\nMorrison's Jig,Jig";
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.body.duplicates).toBe(1);
+    expect(res.body.classesAttached).toBe(0);
+    expect(res.body.errorRows).toHaveLength(1);
+    expect(res.body.classAttachRows).toHaveLength(0);
+    expect(db.findOrCreateClassByName).not.toHaveBeenCalled();
   });
 });
 
