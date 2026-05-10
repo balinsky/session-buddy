@@ -62,12 +62,17 @@ const state = {
     where: '',
     who: '',
     practicedDays: null,
+    classIds: [],
   },
   setFilter: {
     favoriteOnly: false,
     types: [],
+    classIds: [],
   },
   duplicateGroups: [],
+  // Filter modal scratch state — see renderFilterClassChips comment block.
+  filterClasses: [],
+  filterDraftClassIds: { ff: [], sf: [] },
 };
 
 // ===== UTILITIES =====
@@ -176,12 +181,12 @@ function isTuneFilterActive() {
   const f = state.tuneFilter;
   return f.favoriteOnly || f.statuses.length > 0 || f.types.length > 0 ||
     f.key !== '' || f.instruments.length > 0 || f.where !== '' ||
-    f.who !== '' || f.practicedDays !== null;
+    f.who !== '' || f.practicedDays !== null || f.classIds.length > 0;
 }
 
 function isSetFilterActive() {
   const f = state.setFilter;
-  return f.favoriteOnly || f.types.length > 0;
+  return f.favoriteOnly || f.types.length > 0 || f.classIds.length > 0;
 }
 
 // Cross-criterion status × instrument check (design/PerInstrumentStatus.md,
@@ -228,6 +233,10 @@ function applyTuneFilter(tunes) {
       const daysAgo = (Date.now() - new Date(t.last_practiced_date).getTime()) / 86400000;
       if (daysAgo > f.practicedDays) return false;
     }
+    if (f.classIds.length) {
+      const ids = t.class_ids || [];
+      if (!f.classIds.some(id => ids.includes(id))) return false;
+    }
     return true;
   });
 }
@@ -239,6 +248,12 @@ function applySetFilter(sets) {
     if (f.types.length) {
       const setTypes = (s.tunes || []).map(t => t.type).filter(Boolean);
       if (!f.types.some(type => setTypes.includes(type))) return false;
+    }
+    if (f.classIds.length) {
+      // A set passes if ANY tune in it belongs to ANY of the selected classes.
+      const tunesInSet = s.tunes || [];
+      const match = tunesInSet.some(t => (t.class_ids || []).some(id => f.classIds.includes(id)));
+      if (!match) return false;
     }
     return true;
   });
@@ -2517,9 +2532,82 @@ function closeSyncModal() {
   document.getElementById('modal-sync').classList.add('hidden');
 }
 
+// ===== FILTER CLASS PICKER (shared by tune-filter and set-filter modals) =====
+//
+// Working IDs are kept on state.filterDraftClassIds keyed by prefix so the
+// modal can collect changes before Apply commits them to state.tuneFilter /
+// state.setFilter. Class metadata comes from state.filterClasses, refreshed
+// each time a filter modal opens (covers the case where the user just added
+// a class from the Classes tab).
+
+function renderFilterClassChips(prefix) {
+  const container = document.getElementById(`${prefix}-class-chips`);
+  if (!container) return;
+  const ids = state.filterDraftClassIds[prefix] || [];
+  if (ids.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+  const byId = new Map((state.filterClasses || []).map(c => [c.id, c]));
+  container.innerHTML = ids.map(id => {
+    const c = byId.get(id);
+    const name = c ? c.name : `#${id}`;
+    return `<span class="chip removable" data-id="${id}">${esc(name)}<button type="button" class="chip-remove" aria-label="Remove">&times;</button></span>`;
+  }).join('');
+  container.querySelectorAll('.chip-remove').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const id = Number(e.currentTarget.closest('.chip').dataset.id);
+      state.filterDraftClassIds[prefix] = (state.filterDraftClassIds[prefix] || []).filter(x => x !== id);
+      renderFilterClassChips(prefix);
+    });
+  });
+}
+
+function renderFilterClassSuggestions(prefix, query) {
+  const list = document.getElementById(`${prefix}-class-suggestions`);
+  const q = (query || '').trim().toLowerCase();
+  if (!q) { list.classList.add('hidden'); return; }
+  const all = state.filterClasses || [];
+  const taken = new Set(state.filterDraftClassIds[prefix] || []);
+  const matches = all.filter(c => {
+    if (taken.has(c.id)) return false;
+    if (c.name.toLowerCase().includes(q)) return true;
+    if (c.series && c.series.name.toLowerCase().includes(q)) return true;
+    return false;
+  }).slice(0, 8);
+  if (matches.length === 0) {
+    list.innerHTML = `<div class="typeahead-item" style="cursor:default">No matching classes.</div>`;
+  } else {
+    list.innerHTML = matches.map(c => {
+      const sub = c.series ? c.series.name : '';
+      return `<div class="typeahead-item" data-id="${c.id}">${esc(c.name)}${sub ? ` <span class="hint">— ${esc(sub)}</span>` : ''}</div>`;
+    }).join('');
+  }
+  list.classList.remove('hidden');
+  list.querySelectorAll('[data-id]').forEach(item => {
+    item.addEventListener('click', () => {
+      const id = Number(item.dataset.id);
+      const draft = state.filterDraftClassIds[prefix] || [];
+      if (!draft.includes(id)) draft.push(id);
+      state.filterDraftClassIds[prefix] = draft;
+      document.getElementById(`${prefix}-class-input`).value = '';
+      list.classList.add('hidden');
+      renderFilterClassChips(prefix);
+    });
+  });
+}
+
+async function ensureFilterClassesLoaded() {
+  try {
+    state.filterClasses = await API.getClasses();
+  } catch (e) {
+    state.filterClasses = state.filterClasses || [];
+  }
+}
+
 // ===== TUNE FILTER MODAL =====
 
-function openTuneFilter() {
+async function openTuneFilter() {
   const f = state.tuneFilter;
   document.getElementById('ff-fav-only').checked = f.favoriteOnly;
   document.querySelectorAll('.ff-status').forEach(cb => { cb.checked = f.statuses.includes(cb.value); });
@@ -2529,7 +2617,12 @@ function openTuneFilter() {
   document.getElementById('ff-where').value = f.where;
   document.getElementById('ff-who').value = f.who;
   document.getElementById('ff-days').value = f.practicedDays != null ? f.practicedDays : '';
+  document.getElementById('ff-class-input').value = '';
+  document.getElementById('ff-class-suggestions').classList.add('hidden');
+  state.filterDraftClassIds.ff = [...f.classIds];
   document.getElementById('modal-tune-filter').classList.remove('hidden');
+  await ensureFilterClassesLoaded();
+  renderFilterClassChips('ff');
 }
 
 function closeTuneFilter() {
@@ -2546,24 +2639,31 @@ function applyTuneFilterFromModal() {
     where: document.getElementById('ff-where').value.trim(),
     who: document.getElementById('ff-who').value.trim(),
     practicedDays: document.getElementById('ff-days').value ? Number(document.getElementById('ff-days').value) : null,
+    classIds: [...(state.filterDraftClassIds.ff || [])],
   };
   closeTuneFilter();
   renderTuneList(state.tunes, state.tuneSearch);
 }
 
 function clearTuneFilter() {
-  state.tuneFilter = { favoriteOnly: false, statuses: [], types: [], key: '', instruments: [], where: '', who: '', practicedDays: null };
+  state.tuneFilter = { favoriteOnly: false, statuses: [], types: [], key: '', instruments: [], where: '', who: '', practicedDays: null, classIds: [] };
+  state.filterDraftClassIds.ff = [];
   closeTuneFilter();
   renderTuneList(state.tunes, state.tuneSearch);
 }
 
 // ===== SET FILTER MODAL =====
 
-function openSetFilter() {
+async function openSetFilter() {
   const f = state.setFilter;
   document.getElementById('sf-fav-only').checked = f.favoriteOnly;
   document.querySelectorAll('.sf-type').forEach(cb => { cb.checked = f.types.includes(cb.value); });
+  document.getElementById('sf-class-input').value = '';
+  document.getElementById('sf-class-suggestions').classList.add('hidden');
+  state.filterDraftClassIds.sf = [...f.classIds];
   document.getElementById('modal-set-filter').classList.remove('hidden');
+  await ensureFilterClassesLoaded();
+  renderFilterClassChips('sf');
 }
 
 function closeSetFilter() {
@@ -2574,6 +2674,7 @@ async function applySetFilterFromModal() {
   state.setFilter = {
     favoriteOnly: document.getElementById('sf-fav-only').checked,
     types: Array.from(document.querySelectorAll('.sf-type:checked')).map(cb => cb.value),
+    classIds: [...(state.filterDraftClassIds.sf || [])],
   };
   closeSetFilter();
   state.sets = await API.getSets();
@@ -2581,7 +2682,8 @@ async function applySetFilterFromModal() {
 }
 
 async function clearSetFilter() {
-  state.setFilter = { favoriteOnly: false, types: [] };
+  state.setFilter = { favoriteOnly: false, types: [], classIds: [] };
+  state.filterDraftClassIds.sf = [];
   closeSetFilter();
   state.sets = await API.getSets();
   renderSetList(state.sets, state.setSearch);
@@ -2743,12 +2845,18 @@ function init() {
   document.getElementById('btn-apply-tune-filter').addEventListener('click', applyTuneFilterFromModal);
   document.getElementById('btn-clear-tune-filter').addEventListener('click', clearTuneFilter);
   document.getElementById('modal-tune-filter').querySelector('.modal-backdrop').addEventListener('click', closeTuneFilter);
+  document.getElementById('ff-class-input').addEventListener('input', (e) => {
+    renderFilterClassSuggestions('ff', e.target.value);
+  });
 
   // Set filter
   document.getElementById('btn-set-filter').addEventListener('click', openSetFilter);
   document.getElementById('btn-apply-set-filter').addEventListener('click', applySetFilterFromModal);
   document.getElementById('btn-clear-set-filter').addEventListener('click', clearSetFilter);
   document.getElementById('modal-set-filter').querySelector('.modal-backdrop').addEventListener('click', closeSetFilter);
+  document.getElementById('sf-class-input').addEventListener('input', (e) => {
+    renderFilterClassSuggestions('sf', e.target.value);
+  });
 
   // Tune form
   document.getElementById('tune-form').addEventListener('submit', saveTuneForm);

@@ -146,3 +146,79 @@ describe('mergeTunes', () => {
     expect(mockClient.release).toHaveBeenCalled();
   });
 });
+
+describe('getTunesByUser', () => {
+  beforeEach(() => {
+    mockPool.query.mockReset();
+  });
+
+  // Phase 3 of design/Classes.md: each tune in the list response must carry a
+  // class_ids array so the client-side filter can match "tunes in classes
+  // X, Y, Z" without an extra round-trip per tune.
+  it('attaches class_ids to each tune', async () => {
+    mockPool.query.mockImplementation((sql) => {
+      if (/^SELECT \* FROM tunes WHERE user_id/.test(sql)) {
+        return Promise.resolve({ rows: [{ id: 1 }, { id: 2 }, { id: 3 }] });
+      }
+      if (/tune_instrument_status/.test(sql)) {
+        return Promise.resolve({ rows: [] });
+      }
+      if (/class_tunes/.test(sql)) {
+        return Promise.resolve({ rows: [
+          { tune_id: 1, class_id: 10 },
+          { tune_id: 1, class_id: 20 },
+          { tune_id: 3, class_id: 10 },
+        ] });
+      }
+      throw new Error(`Unexpected pool.query: ${sql}`);
+    });
+
+    const tunes = await db.getTunesByUser(99);
+    const byId = Object.fromEntries(tunes.map(t => [t.id, t.class_ids]));
+    expect(byId[1]).toEqual([10, 20]);
+    expect(byId[2]).toEqual([]);              // tune with no classes still has [] (filter expects an array)
+    expect(byId[3]).toEqual([10]);
+  });
+
+  it('returns an empty array without querying class_tunes when the user has no tunes', async () => {
+    mockPool.query.mockImplementation((sql) => {
+      if (/^SELECT \* FROM tunes WHERE user_id/.test(sql)) {
+        return Promise.resolve({ rows: [] });
+      }
+      throw new Error(`Unexpected pool.query: ${sql}`);
+    });
+
+    const tunes = await db.getTunesByUser(99);
+    expect(tunes).toEqual([]);
+    // Should short-circuit before hitting tune_instrument_status / class_tunes.
+    expect(mockPool.query).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('getSetTunes (via getSetById)', () => {
+  beforeEach(() => {
+    mockPool.query.mockReset();
+  });
+
+  // Phase 3 of design/Classes.md: tunes returned inside a set must also carry
+  // class_ids so the set-list filter can match "set contains a tune from
+  // class X" client-side.
+  it('attaches class_ids to each tune inside a set', async () => {
+    mockPool.query.mockImplementation((sql) => {
+      if (/^SELECT \* FROM sets WHERE id/.test(sql)) {
+        return Promise.resolve({ rows: [{ id: 5, user_id: 99 }] });
+      }
+      if (/JOIN set_tunes/.test(sql)) {
+        return Promise.resolve({ rows: [{ id: 1, position: 1 }, { id: 2, position: 2 }] });
+      }
+      if (/class_tunes/.test(sql)) {
+        return Promise.resolve({ rows: [{ tune_id: 1, class_id: 7 }] });
+      }
+      throw new Error(`Unexpected pool.query: ${sql}`);
+    });
+
+    const set = await db.getSetById(5, 99);
+    expect(set.tunes[0].class_ids).toEqual([7]);
+    expect(set.tunes[1].class_ids).toEqual([]);
+  });
+});

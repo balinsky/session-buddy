@@ -198,8 +198,20 @@ async function getTunesByUser(userId) {
     if (!byTune.has(s.tune_id)) byTune.set(s.tune_id, []);
     byTune.get(s.tune_id).push({ instrument: s.instrument, status: s.status });
   }
+  // Attach class_ids so the tune-list view can filter by class
+  // (design/Classes.md, Phase 3) without an extra round-trip per tune.
+  const { rows: classLinks } = await pool.query(
+    `SELECT tune_id, class_id FROM class_tunes WHERE tune_id = ANY($1::int[])`,
+    [ids]
+  );
+  const classIdsByTune = new Map();
+  for (const link of classLinks) {
+    if (!classIdsByTune.has(link.tune_id)) classIdsByTune.set(link.tune_id, []);
+    classIdsByTune.get(link.tune_id).push(link.class_id);
+  }
   for (const t of tunes) {
     t.instrument_statuses = byTune.get(t.id) || [];
+    t.class_ids = classIdsByTune.get(t.id) || [];
   }
   return tunes;
 }
@@ -366,6 +378,22 @@ async function getSetTunes(setId) {
     ORDER BY st.position`,
     [setId]
   );
+  if (rows.length === 0) return rows;
+  // Attach class_ids so the set-list filter can match "any tune in this set
+  // belongs to one of these classes" client-side (design/Classes.md, Phase 3).
+  const ids = rows.map(t => t.id);
+  const { rows: classLinks } = await pool.query(
+    `SELECT tune_id, class_id FROM class_tunes WHERE tune_id = ANY($1::int[])`,
+    [ids]
+  );
+  const classIdsByTune = new Map();
+  for (const link of classLinks) {
+    if (!classIdsByTune.has(link.tune_id)) classIdsByTune.set(link.tune_id, []);
+    classIdsByTune.get(link.tune_id).push(link.class_id);
+  }
+  for (const t of rows) {
+    t.class_ids = classIdsByTune.get(t.id) || [];
+  }
   return rows;
 }
 
