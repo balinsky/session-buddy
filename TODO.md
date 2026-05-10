@@ -1,5 +1,4 @@
 This is a list of items to be done.
-* Classes feature — see design/Classes.md (Class + Class Series + Musician entities, M:N tune↔class, set/tune filter by class, CSV import attaches new classes to existing tunes). 4-phase rollout.
 * OCR for sheet music and Irish ABC images (stretch goal — recognise notation in uploaded images so we can search/render them).
 
 * Add attributes to each of my entities. Ask my AI to "I've added basic attributes and descriptions for my entities. Without adding unnecessary complexity, can you think of important attributes I might be missing, given my app's purpose? Ask me clarifying questions, and suggest changes."
@@ -9,6 +8,7 @@ This is a list of items to be done.
 * Broader Musician feature: replace the free-text "who" field on tunes with a reference to a musician, capture session-player relationships (a musician can be a teacher in one context and a fellow player in another). Foundation for this lands with Classes Phase 1; the tunes.who replacement and session-player tracking are deferred until after Classes ships.
 
 Already completed:
+* Classes feature: Class + Class Series + Musician entities, M:N tune↔class, set/tune filter by class, CSV import attaches classes to new and existing tunes. (design/Classes.md, 4-phase rollout, commits 6794347 → af6df8b.)
 * Per-instrument learning status: tunes track Memorized/Learning/Not Learned per instrument. Tune detail shows a per-instrument table with cycle-on-tap and add/remove. List card shows best-of summary with a small indicator when statuses differ. Filter combination "Memorized + Flute" means "memorized on Flute specifically". CSV import gained "Learned (Instrument)" columns; legacy single Learned column kept as a fallback. (design/PerInstrumentStatus.md, 6-phase rollout, commits afc711a → 7d2405d.)
 * Per-tune images: jpg, png, and PDF attachments. Bulk tarball upload matches files to tunes by Thesession ID embedded in the filename. Full-screen viewer with remove button.
 * Unified duplicate detection: name match alone isn't enough — types and Thesession IDs must agree. Same rule applies to CSV import, the duplicate-checker UI, and the website's add-tune / edit-tune flows (which return 409 with conflictingTuneId so the form can offer to open the existing tune).
