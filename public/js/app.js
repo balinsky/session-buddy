@@ -789,7 +789,10 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
     }
   });
 
-  document.querySelectorAll('.tune-in-set-link').forEach(el => {
+  // Scope to elements that actually carry data-set-id — this class is reused
+  // by the Classes card (data-tune-class-id) and would otherwise catch those
+  // clicks and try to load a set with id=NaN.
+  document.querySelectorAll('.tune-in-set-link[data-set-id]').forEach(el => {
     el.addEventListener('click', () => goToSetDetail(Number(el.dataset.setId)));
   });
 
