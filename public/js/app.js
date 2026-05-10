@@ -259,7 +259,8 @@ const NAV_SECTION = {
   'image-viewer': 'tunes',
   sets: 'sets', 'set-detail': 'sets', 'set-form': 'sets', 'set-import': 'sets',
   classes: 'classes', 'class-detail': 'classes', 'class-form': 'classes',
-  'series-detail': 'classes', 'musician-detail': 'classes',
+  'series-detail': 'classes', 'series-form': 'classes',
+  'musician-detail': 'classes', 'musician-form': 'classes',
 };
 
 function showView(viewId, pushToHistory = true) {
@@ -1366,41 +1367,62 @@ async function goToClasses() {
   showView('classes', false);
   document.getElementById('header-title').textContent = 'My Classes';
   try {
-    const classes = await API.getClasses();
+    // Fetch series alongside classes so empty series still appear as
+    // navigable headers — otherwise the user couldn't reach a series'
+    // Edit/Delete page after deleting all of its classes.
+    const [classes, allSeries] = await Promise.all([
+      API.getClasses(), API.getClassSeries(),
+    ]);
     state.classes = classes;
-    renderClassesList(classes);
+    state.allSeries = allSeries;
+    renderClassesList(classes, allSeries);
   } catch (e) {
     showError('Could not load classes: ' + e.message);
   }
 }
 
-function renderClassesList(classes) {
+function renderClassesList(classes, allSeries) {
   const container = document.getElementById('class-list');
-  if (!classes || classes.length === 0) {
+  if ((!classes || classes.length === 0) && (!allSeries || allSeries.length === 0)) {
     container.innerHTML = '<div class="empty-list"><p>No classes yet.</p><p class="hint">Tap + New Class to add one.</p></div>';
     return;
   }
-  // Group by series_id (null bucket holds standalone classes).
+  // Group classes by series_id (null bucket holds standalone classes).
   const bySeries = new Map();
-  const seriesNames = new Map();
   for (const c of classes) {
     const sid = c.series_id || null;
     if (!bySeries.has(sid)) bySeries.set(sid, []);
     bySeries.get(sid).push(c);
-    if (sid && c.series) seriesNames.set(sid, c.series.name);
   }
-  // Render: standalone first, then each series group sorted by series name.
-  const ordered = [];
-  if (bySeries.has(null)) ordered.push({ sid: null, name: 'Standalone classes', classes: bySeries.get(null) });
-  for (const [sid, name] of [...seriesNames.entries()].sort((a, b) => a[1].localeCompare(b[1]))) {
-    ordered.push({ sid, name, classes: bySeries.get(sid) });
+
+  // Render order: standalone classes first (if any), then all series sorted
+  // by name — including empty ones so they remain reachable.
+  const groups = [];
+  const standalone = bySeries.get(null) || [];
+  if (standalone.length > 0) {
+    groups.push({ sid: null, name: 'Standalone classes', classes: standalone });
   }
+  for (const s of [...(allSeries || [])].sort((a, b) => a.name.localeCompare(b.name))) {
+    groups.push({ sid: s.id, name: s.name, classes: bySeries.get(s.id) || [] });
+  }
+
   let html = '';
-  for (const group of ordered) {
-    if (group.sid !== null || classes.some(c => c.series_id)) {
-      // Show a header any time there's at least one series — keeps standalone
-      // classes labeled too. If everything is standalone, hide the header.
-      html += `<div class="status-group-header${group.sid ? ' clickable' : ''}" ${group.sid ? `data-series-id="${group.sid}"` : ''}>${esc(group.name)}</div>`;
+  for (const group of groups) {
+    // Show the standalone header only when at least one series group also
+    // exists — otherwise it's redundant ("everything is standalone").
+    const showHeader = group.sid !== null || groups.length > 1;
+    if (showHeader) {
+      const headerActions = group.sid
+        ? `<div class="series-actions">
+             <button class="btn-card-edit" data-edit-series="${group.sid}" title="Edit series" aria-label="Edit series">&#9998;</button>
+             <button class="btn-card-delete" data-delete-series="${group.sid}" title="Delete series" aria-label="Delete series">&times;</button>
+           </div>`
+        : '';
+      html += `<div class="status-group-header${group.sid ? ' clickable' : ''}" ${group.sid ? `data-series-id="${group.sid}"` : ''}><span class="status-group-name">${esc(group.name)}</span>${headerActions}</div>`;
+    }
+    if (group.classes.length === 0) {
+      html += `<div class="hint" style="padding:0 4px 8px;">No classes in this series yet.</div>`;
+      continue;
     }
     for (const c of group.classes) {
       const inst = c.instructors || [];
@@ -1414,18 +1436,75 @@ function renderClassesList(classes) {
       ].filter(Boolean).map(esc).join(' · ');
       html += `
         <div class="list-card" data-class-id="${c.id}" role="button" tabindex="0">
-          <div class="tune-card-name">${esc(c.name)}</div>
+          <div class="tune-card-top">
+            <div class="tune-card-name">${esc(c.name)}</div>
+            <div class="card-actions">
+              <button class="btn-card-edit" data-edit-class="${c.id}" title="Edit class" aria-label="Edit class">&#9998;</button>
+              <button class="btn-card-delete" data-delete-class="${c.id}" title="Delete class" aria-label="Delete class">&times;</button>
+            </div>
+          </div>
           ${meta ? `<div class="tune-card-meta"><span class="tune-card-type-key">${meta}</span></div>` : ''}
           ${instructorLabel ? `<div class="tune-card-meta"><span class="tune-card-type-key">${instructorLabel}</span></div>` : ''}
         </div>`;
     }
   }
   container.innerHTML = html;
+
   container.querySelectorAll('.list-card').forEach(card => {
     card.addEventListener('click', () => goToClassDetail(Number(card.dataset.classId)));
   });
   container.querySelectorAll('.status-group-header.clickable').forEach(h => {
     h.addEventListener('click', () => goToSeriesDetail(Number(h.dataset.seriesId)));
+  });
+
+  // Inline edit/delete buttons (stopPropagation so the card/header click
+  // doesn't also fire and navigate to detail).
+  container.querySelectorAll('[data-edit-class]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        const klass = await API.getClass(Number(btn.dataset.editClass));
+        goToClassForm(klass);
+      } catch (err) { showError('Could not load class: ' + err.message); }
+    });
+  });
+  container.querySelectorAll('[data-delete-class]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = Number(btn.dataset.deleteClass);
+      const klass = state.classes.find(c => c.id === id);
+      if (!klass || !confirm(`Delete "${klass.name}"?`)) return;
+      try {
+        await API.deleteClass(id);
+        await goToClasses();
+      } catch (err) { showError('Could not delete class: ' + err.message); }
+    });
+  });
+  container.querySelectorAll('[data-edit-series]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        const series = await API.getClassSeriesById(Number(btn.dataset.editSeries));
+        goToSeriesForm(series);
+      } catch (err) { showError('Could not load series: ' + err.message); }
+    });
+  });
+  container.querySelectorAll('[data-delete-series]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const sid = Number(btn.dataset.deleteSeries);
+      const series = (state.allSeries || []).find(s => s.id === sid);
+      const classCount = state.classes.filter(c => c.series_id === sid).length;
+      if (!series) return;
+      const msg = classCount > 0
+        ? `Delete "${series.name}"? Its ${classCount} class${classCount === 1 ? '' : 'es'} will be kept but unlinked from the series.`
+        : `Delete "${series.name}"?`;
+      if (!confirm(msg)) return;
+      try {
+        await API.deleteClassSeries(sid);
+        await goToClasses();
+      } catch (err) { showError('Could not delete series: ' + err.message); }
+    });
   });
 }
 
@@ -1783,19 +1862,251 @@ async function createSeriesInline() {
   }
 }
 
-// Stubs for navigation targets that get fleshed out in Phase 2c/2d.
+// ===== SERIES DETAIL & FORM =====
+
 async function goToSeriesDetail(seriesId) {
   showView('series-detail');
   document.getElementById('header-title').textContent = 'Series Detail';
-  const container = document.getElementById('series-detail-content');
-  container.innerHTML = `<div class="empty-list"><p>Series detail comes in the next phase.</p><p class="hint">id: ${seriesId}</p></div>`;
+  try {
+    const series = await API.getClassSeriesById(seriesId);
+    renderSeriesDetail(series);
+  } catch (e) {
+    showError('Could not load series: ' + e.message);
+  }
 }
+
+function renderSeriesDetail(series) {
+  const container = document.getElementById('series-detail-content');
+  const fields = [];
+  if (series.organizer) fields.push(['Organizer', esc(series.organizer)]);
+  if (series.instrument) fields.push(['Instrument', esc(series.instrument)]);
+  const dateRange = [series.date_from, series.date_to].filter(Boolean).map(formatDate).join(' – ');
+  if (dateRange) fields.push(['Dates', esc(dateRange)]);
+  if (series.notes) fields.push(['Notes', esc(series.notes)]);
+
+  let html = `
+    <div class="detail-header">
+      <div class="detail-title-row">
+        <div class="detail-title">${esc(series.name)}</div>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-outline btn-small" id="btn-edit-series">Edit</button>
+        <button class="btn btn-danger btn-small" id="btn-delete-series">Delete</button>
+      </div>
+    </div>`;
+
+  if (fields.length > 0) {
+    html += `<div class="detail-card"><div class="detail-card-title">Details</div>`;
+    fields.forEach(([label, value]) => {
+      html += `<div class="detail-field"><span class="detail-field-label">${label}</span><span class="detail-field-value">${value}</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `<div class="detail-card"><div class="detail-card-title">Classes in this series</div>`;
+  if (!series.classes || series.classes.length === 0) {
+    html += `<div class="hint">No classes in this series yet.</div>`;
+  } else {
+    series.classes.forEach(c => {
+      const meta = formatDate(c.date);
+      html += `<div class="detail-field"><span class="detail-field-value tune-in-set-link" data-class-id="${c.id}">${esc(c.name)}${meta ? ` <span class="hint">— ${esc(meta)}</span>` : ''} &#8599;</span></div>`;
+    });
+  }
+  html += `</div>`;
+
+  container.innerHTML = html;
+  container.querySelectorAll('[data-class-id]').forEach(link => {
+    link.addEventListener('click', () => goToClassDetail(Number(link.dataset.classId)));
+  });
+  document.getElementById('btn-edit-series').addEventListener('click', () => goToSeriesForm(series));
+  document.getElementById('btn-delete-series').addEventListener('click', () => deleteSeriesFromDetail(series));
+}
+
+async function deleteSeriesFromDetail(series) {
+  // Series deletion sets each child class's series_id to NULL, leaving the
+  // classes themselves intact (per the schema's ON DELETE SET NULL).
+  const childCount = (series.classes || []).length;
+  const msg = childCount > 0
+    ? `Delete "${series.name}"? Its ${childCount} class${childCount === 1 ? '' : 'es'} will be kept but unlinked from the series.`
+    : `Delete "${series.name}"?`;
+  if (!confirm(msg)) return;
+  try {
+    await API.deleteClassSeries(series.id);
+    await goToClasses();
+  } catch (e) {
+    showError('Could not delete series: ' + e.message);
+  }
+}
+
+function goToSeriesForm(series = null) {
+  state.editingSeries = series;
+  showView('series-form');
+  document.getElementById('header-title').textContent = series ? 'Edit Series' : 'New Series';
+  document.getElementById('series-form-title').textContent = series ? 'Edit Series' : 'New Series';
+
+  // Populate instrument dropdown.
+  const instrOptions = '<option value="">— No instrument —</option>' +
+    INSTRUMENTS.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('');
+  document.getElementById('sf-instrument').innerHTML = instrOptions;
+
+  const form = document.getElementById('series-form');
+  form.elements['name'].value = series ? series.name : '';
+  form.elements['organizer'].value = series ? (series.organizer || '') : '';
+  form.elements['instrument'].value = series ? (series.instrument || '') : '';
+  form.elements['date_from'].value = series && series.date_from ? formatDate(series.date_from) : '';
+  form.elements['date_to'].value = series && series.date_to ? formatDate(series.date_to) : '';
+  form.elements['notes'].value = series ? (series.notes || '') : '';
+}
+
+async function saveSeriesForm(e) {
+  e.preventDefault();
+  const form = document.getElementById('series-form');
+  const name = form.elements['name'].value.trim();
+  if (!name) { showError('Series name is required.'); return; }
+  const data = {
+    name,
+    organizer: form.elements['organizer'].value.trim() || null,
+    instrument: form.elements['instrument'].value || null,
+    date_from: form.elements['date_from'].value || null,
+    date_to: form.elements['date_to'].value || null,
+    notes: form.elements['notes'].value.trim() || null,
+  };
+  try {
+    let series;
+    if (state.editingSeries) {
+      series = await API.updateClassSeries(state.editingSeries.id, data);
+    } else {
+      series = await API.createClassSeries(data);
+    }
+    await goToSeriesDetail(series.id);
+  } catch (err) {
+    showError('Could not save series: ' + err.message);
+  }
+}
+
+// ===== MUSICIAN DETAIL & FORM =====
 
 async function goToMusicianDetail(musicianId) {
   showView('musician-detail');
   document.getElementById('header-title').textContent = 'Musician';
+  try {
+    const musician = await API.getMusician(musicianId);
+    renderMusicianDetail(musician);
+  } catch (e) {
+    showError('Could not load musician: ' + e.message);
+  }
+}
+
+function renderMusicianDetail(musician) {
   const container = document.getElementById('musician-detail-content');
-  container.innerHTML = `<div class="empty-list"><p>Musician detail comes in the next phase.</p><p class="hint">id: ${musicianId}</p></div>`;
+  const fields = [];
+  if (musician.instruments) fields.push(['Instruments', esc(musician.instruments)]);
+  if (musician.website) {
+    fields.push(['Website', `<a href="${esc(musician.website)}" target="_blank" rel="noopener">${esc(musician.website)} &#8599;</a>`]);
+  }
+  if (musician.notes) fields.push(['Notes', esc(musician.notes)]);
+
+  let html = `
+    <div class="detail-header">
+      <div class="detail-title-row">
+        <div class="detail-title">${esc(musician.name)}</div>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-outline btn-small" id="btn-edit-musician">Edit</button>
+        <button class="btn btn-danger btn-small" id="btn-delete-musician">Delete</button>
+      </div>
+    </div>`;
+
+  if (fields.length > 0) {
+    html += `<div class="detail-card"><div class="detail-card-title">Details</div>`;
+    fields.forEach(([label, value]) => {
+      html += `<div class="detail-field"><span class="detail-field-label">${label}</span><span class="detail-field-value">${value}</span></div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `<div class="detail-card"><div class="detail-card-title">Classes taught</div>`;
+  if (!musician.classes || musician.classes.length === 0) {
+    html += `<div class="hint">No classes recorded yet.</div>`;
+  } else {
+    musician.classes.forEach(c => {
+      const meta = formatDate(c.date);
+      html += `<div class="detail-field"><span class="detail-field-value tune-in-set-link" data-class-id="${c.id}">${esc(c.name)}${meta ? ` <span class="hint">— ${esc(meta)}</span>` : ''} &#8599;</span></div>`;
+    });
+  }
+  html += `</div>`;
+
+  container.innerHTML = html;
+  container.querySelectorAll('[data-class-id]').forEach(link => {
+    link.addEventListener('click', () => goToClassDetail(Number(link.dataset.classId)));
+  });
+  document.getElementById('btn-edit-musician').addEventListener('click', () => goToMusicianForm(musician));
+  document.getElementById('btn-delete-musician').addEventListener('click', () => deleteMusicianFromDetail(musician));
+}
+
+async function deleteMusicianFromDetail(musician) {
+  const childCount = (musician.classes || []).length;
+  const msg = childCount > 0
+    ? `Delete "${musician.name}"? They'll be removed as instructor from ${childCount} class${childCount === 1 ? '' : 'es'} (the classes themselves stay).`
+    : `Delete "${musician.name}"?`;
+  if (!confirm(msg)) return;
+  try {
+    await API.deleteMusician(musician.id);
+    await goToClasses();
+  } catch (e) {
+    showError('Could not delete musician: ' + e.message);
+  }
+}
+
+function goToMusicianForm(musician = null) {
+  state.editingMusician = musician;
+  showView('musician-form');
+  document.getElementById('header-title').textContent = musician ? 'Edit Musician' : 'New Musician';
+  document.getElementById('musician-form-title').textContent = musician ? 'Edit Musician' : 'New Musician';
+
+  // Populate instruments checkbox grid (same vocab as tunes).
+  const grid = document.getElementById('mf-instruments');
+  grid.innerHTML = INSTRUMENTS.map(i =>
+    `<label class="checkbox-item"><input type="checkbox" value="${esc(i)}" /> ${esc(i)}</label>`
+  ).join('');
+
+  const form = document.getElementById('musician-form');
+  form.elements['name'].value = musician ? musician.name : '';
+  form.elements['website'].value = musician ? (musician.website || '') : '';
+  form.elements['notes'].value = musician ? (musician.notes || '') : '';
+
+  const saved = new Set(((musician && musician.instruments) || '')
+    .split(',').map(s => s.trim()).filter(Boolean));
+  grid.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.checked = saved.has(cb.value);
+  });
+}
+
+async function saveMusicianForm(e) {
+  e.preventDefault();
+  const form = document.getElementById('musician-form');
+  const name = form.elements['name'].value.trim();
+  if (!name) { showError('Musician name is required.'); return; }
+  const instruments = Array.from(
+    document.querySelectorAll('#mf-instruments input:checked')
+  ).map(cb => cb.value).join(', ');
+  const data = {
+    name,
+    instruments: instruments || null,
+    website: form.elements['website'].value.trim() || null,
+    notes: form.elements['notes'].value.trim() || null,
+  };
+  try {
+    let musician;
+    if (state.editingMusician) {
+      musician = await API.updateMusician(state.editingMusician.id, data);
+    } else {
+      musician = await API.createMusician(data);
+    }
+    await goToMusicianDetail(musician.id);
+  } catch (err) {
+    showError('Could not save musician: ' + err.message);
+  }
 }
 
 // ===== CSV IMPORT VIEW =====
@@ -2268,6 +2579,12 @@ function init() {
   document.getElementById('cf-tune-search').addEventListener('input', (e) => {
     renderClassFormTuneList(e.target.value);
   });
+
+  // Series and musician forms (Phase 2d).
+  document.getElementById('series-form').addEventListener('submit', saveSeriesForm);
+  document.getElementById('sf-cancel-btn').addEventListener('click', goBack);
+  document.getElementById('musician-form').addEventListener('submit', saveMusicianForm);
+  document.getElementById('mf-cancel-btn').addEventListener('click', goBack);
 
   // Tune list search
   document.getElementById('tune-search').addEventListener('input', e => {

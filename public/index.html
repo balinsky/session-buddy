@@ -416,9 +416,71 @@
         <div id="series-detail-content"></div>
       </div>
 
+      <!-- SERIES FORM -->
+      <div id="view-series-form" class="view">
+        <h2 id="series-form-title">New Series</h2>
+        <form id="series-form" class="form">
+          <div class="form-group">
+            <label for="sf-name">Name *</label>
+            <input id="sf-name" name="name" type="text" required />
+          </div>
+          <div class="form-group">
+            <label for="sf-organizer">Organizer</label>
+            <input id="sf-organizer" name="organizer" type="text" />
+          </div>
+          <div class="form-group">
+            <label for="sf-instrument">Instrument</label>
+            <select id="sf-instrument" name="instrument"></select>
+          </div>
+          <div class="form-group">
+            <label for="sf-date-from">Start date</label>
+            <input id="sf-date-from" name="date_from" type="date" />
+          </div>
+          <div class="form-group">
+            <label for="sf-date-to">End date</label>
+            <input id="sf-date-to" name="date_to" type="date" />
+          </div>
+          <div class="form-group">
+            <label for="sf-notes">Notes</label>
+            <textarea id="sf-notes" name="notes" rows="3"></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary btn-large">Save Series</button>
+            <button type="button" id="sf-cancel-btn" class="btn btn-outline btn-large">Cancel</button>
+          </div>
+        </form>
+      </div>
+
       <!-- MUSICIAN DETAIL -->
       <div id="view-musician-detail" class="view">
         <div id="musician-detail-content"></div>
+      </div>
+
+      <!-- MUSICIAN FORM -->
+      <div id="view-musician-form" class="view">
+        <h2 id="musician-form-title">New Musician</h2>
+        <form id="musician-form" class="form">
+          <div class="form-group">
+            <label for="mf-name">Name *</label>
+            <input id="mf-name" name="name" type="text" required />
+          </div>
+          <div class="form-group">
+            <label>Instruments</label>
+            <div class="checkbox-group" id="mf-instruments"></div>
+          </div>
+          <div class="form-group">
+            <label for="mf-website">Website</label>
+            <input id="mf-website" name="website" type="text" placeholder="https://…" />
+          </div>
+          <div class="form-group">
+            <label for="mf-notes">Notes</label>
+            <textarea id="mf-notes" name="notes" rows="3"></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary btn-large">Save Musician</button>
+            <button type="button" id="mf-cancel-btn" class="btn btn-outline btn-large">Cancel</button>
+          </div>
+        </form>
       </div>
 
       <div id="view-import" class="view">

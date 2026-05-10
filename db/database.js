@@ -814,7 +814,16 @@ async function getClassSeriesById(id, userId) {
     'SELECT * FROM class_series WHERE id = $1 AND user_id = $2',
     [id, userId]
   );
-  return rows[0] || null;
+  if (!rows[0]) return null;
+  // Attach the list of classes that belong to this series so the detail page
+  // can render them without a second round-trip.
+  const { rows: classes } = await pool.query(
+    `SELECT * FROM class WHERE series_id = $1 AND user_id = $2
+     ORDER BY date NULLS LAST, name`,
+    [id, userId]
+  );
+  rows[0].classes = classes;
+  return rows[0];
 }
 
 async function createClassSeries(userId, data) {

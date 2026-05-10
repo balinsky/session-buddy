@@ -1316,3 +1316,40 @@ html, body {
   background: var(--green-light);
   border-left-color: var(--green);
 }
+
+/* Inline edit/delete buttons on list cards and series headers (Phase 2d). */
+.status-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.status-group-name { flex: 1; }
+
+.card-actions, .series-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.btn-card-edit, .btn-card-delete {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  cursor: pointer;
+  color: var(--text-muted);
+  touch-action: manipulation;
+}
+.btn-card-edit:hover { color: var(--green); border-color: var(--green); }
+.btn-card-delete { color: #c33; }
+.btn-card-delete:hover { background: #ffeaea; }
+
+.list-card .tune-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
