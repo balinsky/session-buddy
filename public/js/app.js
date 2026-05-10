@@ -1352,9 +1352,13 @@ async function deleteSet(set) {
 
 // ===== CLASSES VIEW (design/Classes.md, phase 2) =====
 
-// Effective organizer/instrument: the class value if set, else the series'.
-function effectiveOrganizer(klass) { return klass.organizer || klass.series?.organizer || ''; }
-function effectiveInstrument(klass) { return klass.instrument || klass.series?.instrument || ''; }
+// A class's organizer / instrument are stored explicitly on the row. The form
+// pre-populates from the selected series (see autoFillFromSeries) so the user
+// sees the inherited value before saving — but the display layer reads the
+// class's own values, with no silent fallback to the series. That keeps
+// "what the form saved" and "what the detail shows" in sync.
+function effectiveOrganizer(klass) { return klass.organizer || ''; }
+function effectiveInstrument(klass) { return klass.instrument || ''; }
 
 function formatDate(dateStr) {
   if (!dateStr) return '';
@@ -1414,6 +1418,7 @@ function renderClassesList(classes, allSeries) {
     if (showHeader) {
       const headerActions = group.sid
         ? `<div class="series-actions">
+             <button class="btn-card-add" data-add-to-series="${group.sid}" title="Add class to this series" aria-label="Add class to this series">+</button>
              <button class="btn-card-edit" data-edit-series="${group.sid}" title="Edit series" aria-label="Edit series">&#9998;</button>
              <button class="btn-card-delete" data-delete-series="${group.sid}" title="Delete series" aria-label="Delete series">&times;</button>
            </div>`
@@ -1478,6 +1483,12 @@ function renderClassesList(classes, allSeries) {
         await API.deleteClass(id);
         await goToClasses();
       } catch (err) { showError('Could not delete class: ' + err.message); }
+    });
+  });
+  container.querySelectorAll('[data-add-to-series]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      goToClassForm(null, { preSeriesId: Number(btn.dataset.addToSeries) });
     });
   });
   container.querySelectorAll('[data-edit-series]').forEach(btn => {
@@ -1606,13 +1617,16 @@ async function deleteClassFromDetail(klass) {
 
 // ===== CLASS FORM (design/Classes.md, phase 2c) =====
 
-async function goToClassForm(klass = null) {
+async function goToClassForm(klass = null, options = {}) {
+  // options.preSeriesId pre-selects a series when creating a new class
+  // (used by "+ Add Class" affordances on series detail and the classes list).
   state.classForm = {
     editing: klass,
     instructorIds: klass ? klass.instructors.map(m => m.id) : [],
     tuneIds: klass ? klass.tunes.map(t => t.id) : [],
     allMusicians: [],
     allSeries: [],
+    preSeriesId: options.preSeriesId || null,
   };
   showView('class-form');
   document.getElementById('header-title').textContent = klass ? 'Edit Class' : 'New Class';
@@ -1647,11 +1661,20 @@ async function goToClassForm(klass = null) {
   // Prefill basic fields.
   const form = document.getElementById('class-form');
   form.elements['name'].value = klass ? klass.name : '';
-  form.elements['series_id'].value = klass && klass.series_id ? String(klass.series_id) : '';
+  const initialSeriesId = klass && klass.series_id
+    ? String(klass.series_id)
+    : (state.classForm.preSeriesId ? String(state.classForm.preSeriesId) : '');
+  form.elements['series_id'].value = initialSeriesId;
   form.elements['organizer'].value = klass ? (klass.organizer || '') : '';
   form.elements['instrument'].value = klass ? (klass.instrument || '') : '';
   form.elements['date'].value = klass && klass.date ? formatDate(klass.date) : '';
   form.elements['notes'].value = klass ? (klass.notes || '') : '';
+
+  // If a series is selected and the class doesn't already have its own
+  // organizer/instrument, copy them down from the series so the user sees
+  // the inherited value in the form before saving (and saves it explicitly
+  // on the class row, not via display-side fallback).
+  autoFillFromSeries();
 
   // Render the dynamic pieces.
   renderClassFormInstructors();
@@ -1660,6 +1683,21 @@ async function goToClassForm(klass = null) {
   renderClassFormSelectedTunes();
   document.getElementById('cf-tune-search').value = '';
   renderClassFormTuneList('');
+}
+
+// Fills the organizer and instrument fields from the currently-selected
+// series, but only if those fields are empty — so anything the user has
+// already typed/picked stays put. Triggered on form open and on series-
+// dropdown change.
+function autoFillFromSeries() {
+  const seriesId = document.getElementById('cf-series').value;
+  if (!seriesId) return;
+  const series = state.classForm.allSeries.find(s => s.id === Number(seriesId));
+  if (!series) return;
+  const orgInput = document.getElementById('cf-organizer');
+  const instSelect = document.getElementById('cf-instrument');
+  if (!orgInput.value && series.organizer) orgInput.value = series.organizer;
+  if (!instSelect.value && series.instrument) instSelect.value = series.instrument;
 }
 
 function renderClassFormSeriesOptions(selectId = null) {
@@ -1850,6 +1888,7 @@ async function createSeriesInline() {
     const series = await API.createClassSeries(data);
     state.classForm.allSeries.push(series);
     renderClassFormSeriesOptions(series.id);
+    autoFillFromSeries();
     document.getElementById('cf-new-series-form').classList.add('hidden');
     // Clear the inline form so a second open starts fresh.
     document.getElementById('cf-new-series-name').value = '';
@@ -1890,6 +1929,7 @@ function renderSeriesDetail(series) {
         <div class="detail-title">${esc(series.name)}</div>
       </div>
       <div class="detail-actions">
+        <button class="btn btn-primary btn-small" id="btn-add-class-to-series">+ Add Class</button>
         <button class="btn btn-outline btn-small" id="btn-edit-series">Edit</button>
         <button class="btn btn-danger btn-small" id="btn-delete-series">Delete</button>
       </div>
@@ -1918,6 +1958,8 @@ function renderSeriesDetail(series) {
   container.querySelectorAll('[data-class-id]').forEach(link => {
     link.addEventListener('click', () => goToClassDetail(Number(link.dataset.classId)));
   });
+  document.getElementById('btn-add-class-to-series').addEventListener('click', () =>
+    goToClassForm(null, { preSeriesId: series.id }));
   document.getElementById('btn-edit-series').addEventListener('click', () => goToSeriesForm(series));
   document.getElementById('btn-delete-series').addEventListener('click', () => deleteSeriesFromDetail(series));
 }
@@ -2560,6 +2602,7 @@ function init() {
     document.getElementById('cf-new-series-form').classList.add('hidden');
   });
   document.getElementById('cf-create-series-btn').addEventListener('click', createSeriesInline);
+  document.getElementById('cf-series').addEventListener('change', autoFillFromSeries);
   document.getElementById('cf-instructor-input').addEventListener('input', (e) => {
     renderInstructorSuggestions(e.target.value);
   });

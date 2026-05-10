@@ -1353,3 +1353,17 @@ html, body {
   justify-content: space-between;
   gap: 8px;
 }
+
+.btn-card-add {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: 1rem;
+  line-height: 1.2;
+  cursor: pointer;
+  color: var(--green);
+  font-weight: 600;
+  touch-action: manipulation;
+}
+.btn-card-add:hover { background: var(--green-light); border-color: var(--green); }

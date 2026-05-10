@@ -391,22 +391,26 @@
           </div>
 
           <div class="form-group">
-            <label>Tunes taught</label>
-            <div id="cf-selected-tunes" class="selected-tunes-list"></div>
-            <div class="search-bar">
-              <input id="cf-tune-search" type="search" placeholder="Search tunes to add…" />
-            </div>
-            <div id="cf-tune-list" class="item-list pickable"></div>
+            <label for="cf-notes">Notes</label>
+            <textarea id="cf-notes" name="notes" rows="3"></textarea>
           </div>
 
           <div class="form-group">
-            <label for="cf-notes">Notes</label>
-            <textarea id="cf-notes" name="notes" rows="3"></textarea>
+            <label>Tunes taught (selected)</label>
+            <div id="cf-selected-tunes" class="selected-tunes-list"></div>
           </div>
 
           <div class="form-actions">
             <button type="submit" class="btn btn-primary btn-large">Save Class</button>
             <button type="button" id="cf-cancel-btn" class="btn btn-outline btn-large">Cancel</button>
+          </div>
+
+          <div class="form-group">
+            <label>Add tunes</label>
+            <div class="search-bar">
+              <input id="cf-tune-search" type="search" placeholder="Search tunes to add…" />
+            </div>
+            <div id="cf-tune-list" class="item-list pickable"></div>
           </div>
         </form>
       </div>
