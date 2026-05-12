@@ -322,14 +322,25 @@ async function findOrCreateMusicianByName(userId, name) {
 }
 
 // Returns all classes for a user with instructors and tunes pre-joined, for
-// use by the CSV export endpoint. One DB call per class (via _enrichClass) but
-// enrichment is already the pattern for the detail view.
+// Used by the CSV export endpoint. Batches series, instructors, and tunes
+// into 4 queries total instead of 3N+1 via _enrichClass.
 async function getClassesWithDetails(userId) {
-  const { rows } = await pool.query(
+  const { rows: classes } = await pool.query(
     'SELECT * FROM class WHERE user_id = $1 ORDER BY date DESC NULLS LAST, name',
     [userId]
   );
-  return Promise.all(rows.map(c => _enrichClass(c, true)));
+  if (classes.length === 0) return classes;
+  const classIds = classes.map(c => c.id);
+
+  const [seriesById, instructorsByClass, tunesByClass] =
+    await _batchEnrichClasses(classIds, true);
+
+  return classes.map(c => ({
+    ...c,
+    series: seriesById.get(c.series_id) || null,
+    instructors: instructorsByClass.get(c.id) || [],
+    tunes: tunesByClass ? tunesByClass.get(c.id) || [] : undefined,
+  }));
 }
 
 // Per-tune column list. Status & playable instruments live in the
@@ -845,6 +856,61 @@ async function mergeTunes(primaryId, mergeIds, userId) {
 
 // --- Classes / Series / Musicians (design/Classes.md, phase 2) -----------
 
+// Fetches series, instructors, and optionally tunes for a set of class IDs
+// in 2–3 batched queries. Returns [seriesById, instructorsByClass, tunesByClass?].
+// tunesByClass is null when withTunes is false.
+async function _batchEnrichClasses(classIds, withTunes) {
+  // Series referenced by these classes.
+  const seriesIds = [...new Set(
+    (await pool.query('SELECT DISTINCT series_id FROM class WHERE id = ANY($1::int[]) AND series_id IS NOT NULL', [classIds]))
+      .rows.map(r => r.series_id)
+  )];
+  const seriesById = new Map();
+  if (seriesIds.length > 0) {
+    const { rows } = await pool.query(
+      'SELECT * FROM class_series WHERE id = ANY($1::int[])', [seriesIds]
+    );
+    for (const s of rows) seriesById.set(s.id, s);
+  }
+
+  // Instructors for all classes.
+  const { rows: instrRows } = await pool.query(
+    `SELECT ci.class_id, m.*
+     FROM musician m
+     JOIN class_instructors ci ON ci.musician_id = m.id
+     WHERE ci.class_id = ANY($1::int[])
+     ORDER BY m.name`,
+    [classIds]
+  );
+  const instructorsByClass = new Map();
+  for (const row of instrRows) {
+    if (!instructorsByClass.has(row.class_id)) instructorsByClass.set(row.class_id, []);
+    const { class_id, ...musician } = row;
+    instructorsByClass.get(class_id).push(musician);
+  }
+
+  // Tunes for all classes (only when needed, e.g. CSV export).
+  let tunesByClass = null;
+  if (withTunes) {
+    const { rows: tuneRows } = await pool.query(
+      `SELECT ct.class_id, t.*
+       FROM tunes t
+       JOIN class_tunes ct ON ct.tune_id = t.id
+       WHERE ct.class_id = ANY($1::int[])
+       ORDER BY t.name`,
+      [classIds]
+    );
+    tunesByClass = new Map();
+    for (const row of tuneRows) {
+      if (!tunesByClass.has(row.class_id)) tunesByClass.set(row.class_id, []);
+      const { class_id, ...tune } = row;
+      tunesByClass.get(class_id).push(tune);
+    }
+  }
+
+  return [seriesById, instructorsByClass, tunesByClass];
+}
+
 // Loads a class's nested series, instructors (full musician rows), and
 // tunes. Used by both the list and detail responses; the list version may
 // pass `withTunes: false` if it doesn't need the M:N tune list.
@@ -878,11 +944,20 @@ async function _enrichClass(klass, withTunes = true) {
 }
 
 async function getClassesByUser(userId) {
-  const { rows } = await pool.query(
+  const { rows: classes } = await pool.query(
     'SELECT * FROM class WHERE user_id = $1 ORDER BY date DESC NULLS LAST, name',
     [userId]
   );
-  return Promise.all(rows.map(c => _enrichClass(c, false)));
+  if (classes.length === 0) return classes;
+  const classIds = classes.map(c => c.id);
+
+  const [seriesById, instructorsByClass] = await _batchEnrichClasses(classIds, false);
+
+  return classes.map(c => ({
+    ...c,
+    series: seriesById.get(c.series_id) || null,
+    instructors: instructorsByClass.get(c.id) || [],
+  }));
 }
 
 async function getClassById(id, userId) {
