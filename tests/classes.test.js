@@ -20,6 +20,7 @@ beforeEach(() => {
   db.getClassesByUser.mockResolvedValue([]);
   db.getTunesByUser.mockResolvedValue([]);
   db.createClass.mockResolvedValue({ id: 99, name: 'New Class', series: null, instructors: [], tunes: [] });
+  db.attachTuneToClass.mockResolvedValue(undefined);
 });
 
 // ── Auth middleware (smoke) ──────────────────────────────────────────────────
@@ -273,7 +274,7 @@ describe('POST /api/classes/import', () => {
     expect(db.createClass).toHaveBeenCalledWith(1, expect.objectContaining({ name: 'Class 3', organizer: 'OAIM' }));
   });
 
-  it('skips a class that already exists (same name + series)', async () => {
+  it('skips a class that already exists with no tunes to attach', async () => {
     db.getClassesByUser.mockResolvedValue([
       { id: 7, name: 'Class 3', series_id: 5 },
     ]);
@@ -285,6 +286,26 @@ describe('POST /api/classes/import', () => {
     expect(res.body.imported).toBe(0);
     expect(res.body.skipped).toBe(1);
     expect(res.body.errorRows[0].Error).toMatch(/already exists/i);
+    expect(db.createClass).not.toHaveBeenCalled();
+  });
+
+  it('attaches tunes to an existing class instead of skipping', async () => {
+    db.getClassesByUser.mockResolvedValue([
+      { id: 7, name: 'Class 3', series_id: 5 },
+    ]);
+    db.findOrCreateSeriesByName.mockResolvedValue({ id: 5, name: 'OAIM Spring 2025' });
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: "Morrison's Jig", thesession_id: '1', class_ids: [] },
+    ]);
+    const csv = "Name,Series,Tune Names,Tune IDs\nClass 3,OAIM Spring 2025,Morrison's Jig,1";
+    const res = await request(app).post('/api/classes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'classes.csv');
+    expect(res.body.imported).toBe(0);
+    expect(res.body.skipped).toBe(0);
+    expect(res.body.tunesAttached).toBe(1);
+    expect(res.body.errorRows[0].Error).toMatch(/1 tune added/i);
+    expect(db.attachTuneToClass).toHaveBeenCalledWith(100, 7);
     expect(db.createClass).not.toHaveBeenCalled();
   });
 

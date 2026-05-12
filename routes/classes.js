@@ -108,9 +108,9 @@ router.post('/classes/import', upload.single('csv'), async (req, res) => {
     return res.status(500).json({ error: 'Could not load existing data: ' + err.message });
   }
 
-  // Existing class dup index: "lowercased name|series_id_or_null"
-  const existingClassKeys = new Set(
-    existingClasses.map(c => `${(c.name || '').toLowerCase()}|${c.series_id ?? ''}`)
+  // Existing class dup index: dupKey -> {id} so we can attach tunes to existing classes.
+  const existingClassMap = new Map(
+    existingClasses.map(c => [`${(c.name || '').toLowerCase()}|${c.series_id ?? ''}`, c])
   );
 
   // Tune lookup indexes.
@@ -122,9 +122,32 @@ router.post('/classes/import', upload.single('csv'), async (req, res) => {
     if (n && !tuneByName.has(n)) tuneByName.set(n, t);
   }
 
+  // Resolve tunes from a CSV row; returns array of matched tune IDs and pushes
+  // an error row for each unmatched entry.
+  function resolveRowTunes(name, seriesName, row) {
+    const tuneNamesList = splitSemi(col(row, 'Tune Names'));
+    const tuneIdsList = splitSemi(col(row, 'Tune IDs'));
+    const maxTunes = Math.max(tuneNamesList.length, tuneIdsList.length);
+    const ids = [];
+    for (let i = 0; i < maxTunes; i++) {
+      const sid = (tuneIdsList[i] || '').trim();
+      const tName = (tuneNamesList[i] || '').trim();
+      let tune = sid ? tuneByThesessionId.get(sid) : null;
+      if (!tune && tName) tune = tuneByName.get(tName.toLowerCase());
+      if (tune) {
+        ids.push(tune.id);
+      } else {
+        const desc = sid ? `ID ${sid}` : `"${tName}"`;
+        errorRows.push({ Name: name, Series: seriesName, Error: `Tune ${desc} not found — class imported without it` });
+      }
+    }
+    return ids;
+  }
+
   const imported = [];
   const errorRows = [];
   let skipped = 0;
+  let tunesAttached = 0;
 
   for (const row of records) {
     const name = col(row, 'Name').trim();
@@ -143,11 +166,33 @@ router.post('/classes/import', upload.single('csv'), async (req, res) => {
       }
     }
 
-    // Dup check: same name + series already exists.
+    // Dup check: class with same name + series already exists.
     const dupKey = `${name.toLowerCase()}|${seriesId ?? ''}`;
-    if (existingClassKeys.has(dupKey)) {
-      skipped++;
-      errorRows.push({ Name: name, Series: seriesName, Error: 'Class already exists (skipped)' });
+    const existingClass = existingClassMap.get(dupKey);
+    if (existingClass) {
+      // Attach any tunes from this row to the existing class instead of skipping.
+      const tuneIds = resolveRowTunes(name, seriesName, row);
+      if (tuneIds.length === 0) {
+        skipped++;
+        errorRows.push({ Name: name, Series: seriesName, Error: 'Class already exists (skipped)' });
+      } else {
+        let attached = 0;
+        for (const tid of tuneIds) {
+          try {
+            await db.attachTuneToClass(tid, existingClass.id);
+            attached++;
+          } catch (err) {
+            errorRows.push({ Name: name, Series: seriesName, Error: `Could not attach tune: ${err.message}` });
+          }
+        }
+        tunesAttached += attached;
+        if (attached > 0) {
+          errorRows.push({ Name: name, Series: seriesName, Error: `Class already exists — ${attached} tune${attached !== 1 ? 's' : ''} added` });
+        } else {
+          skipped++;
+          errorRows.push({ Name: name, Series: seriesName, Error: 'Class already exists (skipped)' });
+        }
+      }
       continue;
     }
 
@@ -163,24 +208,7 @@ router.post('/classes/import', upload.single('csv'), async (req, res) => {
       }
     }
 
-    // Resolve tunes. Tune Names and Tune IDs are parallel semicolon lists;
-    // prefer ID match over name match for each position.
-    const tuneNamesList = splitSemi(col(row, 'Tune Names'));
-    const tuneIdsList = splitSemi(col(row, 'Tune IDs'));
-    const maxTunes = Math.max(tuneNamesList.length, tuneIdsList.length);
-    const tuneIds = [];
-    for (let i = 0; i < maxTunes; i++) {
-      const sid = (tuneIdsList[i] || '').trim();
-      const tName = (tuneNamesList[i] || '').trim();
-      let tune = sid ? tuneByThesessionId.get(sid) : null;
-      if (!tune && tName) tune = tuneByName.get(tName.toLowerCase());
-      if (tune) {
-        tuneIds.push(tune.id);
-      } else {
-        const desc = sid ? `ID ${sid}` : `"${tName}"`;
-        errorRows.push({ Name: name, Series: seriesName, Error: `Tune ${desc} not found — class imported without it` });
-      }
-    }
+    const tuneIds = resolveRowTunes(name, seriesName, row);
 
     // Create the class.
     try {
@@ -195,13 +223,13 @@ router.post('/classes/import', upload.single('csv'), async (req, res) => {
         instructor_ids: instructorIds,
       });
       imported.push(klass.id);
-      existingClassKeys.add(dupKey);  // prevent double-import in same file
+      existingClassMap.set(dupKey, { id: klass.id });  // prevent double-import in same file
     } catch (err) {
       errorRows.push({ Name: name, Series: seriesName, Error: 'Database error: ' + err.message });
     }
   }
 
-  res.json({ imported: imported.length, skipped, errorRows, createdIds: imported });
+  res.json({ imported: imported.length, skipped, tunesAttached, errorRows, createdIds: imported });
 });
 
 router.get('/classes/:id', async (req, res) => {
