@@ -1367,3 +1367,23 @@ html, body {
   touch-action: manipulation;
 }
 .btn-card-add:hover { background: var(--green-light); border-color: var(--green); }
+
+/* ===== ERROR TOAST ===== */
+#error-toast {
+  position: fixed;
+  bottom: calc(var(--nav-height) + 12px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #c0392b;
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  max-width: 90vw;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 9999;
+}
+#error-toast.visible { opacity: 1; }

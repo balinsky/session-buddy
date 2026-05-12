@@ -181,7 +181,11 @@ function setTypeLabel(set) {
 }
 
 function showError(msg) {
-  alert(msg);
+  const toast = document.getElementById('error-toast');
+  toast.textContent = msg;
+  toast.classList.add('visible');
+  clearTimeout(toast._hideTimer);
+  toast._hideTimer = setTimeout(() => toast.classList.remove('visible'), 4000);
 }
 
 // ===== FILTER HELPERS =====
