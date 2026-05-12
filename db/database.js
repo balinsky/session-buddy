@@ -528,35 +528,57 @@ async function getSetById(id, userId) {
   return { ...rows[0], tunes: await getSetTunes(id) };
 }
 
-async function createSet(userId, tuneIds) {
-  const { rows } = await pool.query(
-    'INSERT INTO sets (user_id) VALUES ($1) RETURNING *',
-    [userId]
+// Inserts set_tunes rows for a set in a single multi-row INSERT.
+// tuneIds must already be validated; client must be inside a transaction.
+async function _insertSetTunes(client, setId, tuneIds) {
+  if (!tuneIds.length) return;
+  const placeholders = tuneIds.map((_, i) =>
+    `($${i * 3 + 1}, $${i * 3 + 2}, $${i * 3 + 3})`
+  ).join(', ');
+  await client.query(
+    `INSERT INTO set_tunes (set_id, tune_id, position) VALUES ${placeholders}`,
+    tuneIds.flatMap((id, i) => [setId, id, i])
   );
-  const setId = rows[0].id;
-  for (let i = 0; i < tuneIds.length; i++) {
-    await pool.query(
-      'INSERT INTO set_tunes (set_id, tune_id, position) VALUES ($1, $2, $3)',
-      [setId, tuneIds[i], i]
+}
+
+async function createSet(userId, tuneIds) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      'INSERT INTO sets (user_id) VALUES ($1) RETURNING *',
+      [userId]
     );
+    await _insertSetTunes(client, rows[0].id, tuneIds);
+    await client.query('COMMIT');
+    return getSetById(rows[0].id, userId);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-  return getSetById(setId, userId);
 }
 
 async function updateSet(id, userId, tuneIds) {
-  const { rows } = await pool.query(
-    'SELECT id FROM sets WHERE id = $1 AND user_id = $2',
-    [id, userId]
-  );
-  if (!rows[0]) return null;
-  await pool.query('DELETE FROM set_tunes WHERE set_id = $1', [id]);
-  for (let i = 0; i < tuneIds.length; i++) {
-    await pool.query(
-      'INSERT INTO set_tunes (set_id, tune_id, position) VALUES ($1, $2, $3)',
-      [id, tuneIds[i], i]
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      'SELECT id FROM sets WHERE id = $1 AND user_id = $2',
+      [id, userId]
     );
+    if (!rows[0]) { await client.query('ROLLBACK'); return null; }
+    await client.query('DELETE FROM set_tunes WHERE set_id = $1', [id]);
+    await _insertSetTunes(client, id, tuneIds);
+    await client.query('COMMIT');
+    return getSetById(id, userId);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
-  return getSetById(id, userId);
 }
 
 async function deleteSet(id, userId) {
