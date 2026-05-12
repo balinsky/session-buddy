@@ -7,6 +7,7 @@ const tar = require('tar');
 const { parse } = require('csv-parse/sync');
 const db = require('../db/database');
 const requireUser = require('../middleware/requireUser');
+const { col } = require('../utils/csv');
 
 const upload = multer({ storage: multer.memoryStorage() });
 const uploadImage = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -173,13 +174,6 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     if (err.lines) parts.push(`line: ${err.lines}`);
     if (err.field !== undefined) parts.push(`field: ${err.field}`);
     return res.status(400).json({ error: parts.join(' — ') });
-  }
-
-  // Case-insensitive column lookup
-  function col(row, name) {
-    if (row[name] !== undefined) return row[name] || '';
-    const key = Object.keys(row).find(k => k.toLowerCase() === name.toLowerCase());
-    return key ? (row[key] || '') : '';
   }
 
   // Detect per-instrument columns (Phase 5). Returns Map<instrument, headerName>.

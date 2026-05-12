@@ -4,6 +4,7 @@ const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const db = require('../db/database');
 const requireUser = require('../middleware/requireUser');
+const { col } = require('../utils/csv');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -54,12 +55,7 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     return res.status(400).json({ error: parts.join(' — ') });
   }
 
-  // Case-insensitive column lookup
-  function col(row, name) {
-    if (row[name] !== undefined) return (row[name] || '').trim();
-    const key = Object.keys(row).find(k => k.toLowerCase() === name.toLowerCase());
-    return key ? (row[key] || '').trim() : '';
-  }
+
 
   // Index user's tunes by thesession_id for fast lookup
   let allTunes;

@@ -9,6 +9,7 @@ const multer = require('multer');
 const { parse } = require('csv-parse/sync');
 const db = require('../db/database');
 const requireUser = require('../middleware/requireUser');
+const { col } = require('../utils/csv');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -90,12 +91,7 @@ router.post('/classes/import', upload.single('csv'), async (req, res) => {
     return res.status(400).json({ error: 'Could not parse CSV: ' + err.message });
   }
 
-  // Case-insensitive column lookup (mirrors tune import).
-  function col(row, name) {
-    if (row[name] !== undefined) return row[name] || '';
-    const key = Object.keys(row).find(k => k.toLowerCase() === name.toLowerCase());
-    return key ? (row[key] || '') : '';
-  }
+
 
   // Load existing classes, series, and tunes for dup/match checks.
   let existingClasses, existingTunes;
