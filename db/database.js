@@ -465,14 +465,47 @@ async function getSetTunes(setId) {
 }
 
 async function getSetsByUser(userId) {
-  const { rows } = await pool.query(
+  const { rows: sets } = await pool.query(
     'SELECT * FROM sets WHERE user_id = $1 ORDER BY created_at DESC',
     [userId]
   );
-  return Promise.all(rows.map(async set => ({
-    ...set,
-    tunes: await getSetTunes(set.id),
-  })));
+  if (sets.length === 0) return sets;
+
+  const setIds = sets.map(s => s.id);
+
+  // One query for all tunes across all sets (replaces one getSetTunes call per set).
+  const { rows: tuneRows } = await pool.query(`
+    SELECT t.*, st.set_id, st.position
+    FROM tunes t
+    JOIN set_tunes st ON t.id = st.tune_id
+    WHERE st.set_id = ANY($1::int[])
+    ORDER BY st.set_id, st.position`,
+    [setIds]
+  );
+
+  // One query for all class links across all those tunes.
+  const tuneIds = [...new Set(tuneRows.map(t => t.id))];
+  const classIdsByTune = new Map();
+  if (tuneIds.length > 0) {
+    const { rows: classLinks } = await pool.query(
+      `SELECT tune_id, class_id FROM class_tunes WHERE tune_id = ANY($1::int[])`,
+      [tuneIds]
+    );
+    for (const link of classLinks) {
+      if (!classIdsByTune.has(link.tune_id)) classIdsByTune.set(link.tune_id, []);
+      classIdsByTune.get(link.tune_id).push(link.class_id);
+    }
+  }
+
+  // Attach class_ids and group tunes by set.
+  const tunesBySet = new Map();
+  for (const t of tuneRows) {
+    t.class_ids = classIdsByTune.get(t.id) || [];
+    if (!tunesBySet.has(t.set_id)) tunesBySet.set(t.set_id, []);
+    tunesBySet.get(t.set_id).push(t);
+  }
+
+  return sets.map(set => ({ ...set, tunes: tunesBySet.get(set.id) || [] }));
 }
 
 async function getSetById(id, userId) {
