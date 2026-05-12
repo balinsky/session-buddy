@@ -69,10 +69,19 @@ const state = {
     types: [],
     classIds: [],
   },
+  classFilter: {
+    seriesIds: [],
+    instrument: '',
+    organizer: '',
+    instructor: '',
+    dateFrom: '',
+    dateTo: '',
+  },
   duplicateGroups: [],
   // Filter modal scratch state — see renderFilterClassChips comment block.
   filterClasses: [],
   filterDraftClassIds: { ff: [], sf: [] },
+  filterDraftClassSeriesIds: [],
 };
 
 // ===== UTILITIES =====
@@ -187,6 +196,29 @@ function isTuneFilterActive() {
 function isSetFilterActive() {
   const f = state.setFilter;
   return f.favoriteOnly || f.types.length > 0 || f.classIds.length > 0;
+}
+
+function isClassFilterActive() {
+  const f = state.classFilter;
+  return f.seriesIds.length > 0 || f.instrument !== '' || f.organizer !== '' ||
+    f.instructor !== '' || f.dateFrom !== '' || f.dateTo !== '';
+}
+
+function applyClassFilter(classes) {
+  const f = state.classFilter;
+  return classes.filter(c => {
+    if (f.seriesIds.length && !f.seriesIds.includes(c.series_id)) return false;
+    if (f.instrument && !(c.instrument || '').toLowerCase().includes(f.instrument.toLowerCase())) return false;
+    if (f.organizer && !(c.organizer || '').toLowerCase().includes(f.organizer.toLowerCase())) return false;
+    if (f.instructor) {
+      const q = f.instructor.toLowerCase();
+      const match = (c.instructors || []).some(i => i.name.toLowerCase().includes(q));
+      if (!match) return false;
+    }
+    if (f.dateFrom && (!c.date || c.date < f.dateFrom)) return false;
+    if (f.dateTo && (!c.date || c.date > f.dateTo)) return false;
+    return true;
+  });
 }
 
 // Cross-criterion status × instrument check (design/PerInstrumentStatus.md,
@@ -1495,28 +1527,38 @@ async function goToClasses() {
 }
 
 function renderClassesList(classes, allSeries) {
+  updateFilterBtnStyle('btn-class-filter', isClassFilterActive());
+  const filtered = applyClassFilter(classes || []);
+  const filterActive = isClassFilterActive();
   const container = document.getElementById('class-list');
-  if ((!classes || classes.length === 0) && (!allSeries || allSeries.length === 0)) {
-    container.innerHTML = '<div class="empty-list"><p>No classes yet.</p><p class="hint">Tap + New Class to add one.</p></div>';
+  if ((!filtered.length) && (!allSeries || allSeries.length === 0 || filterActive)) {
+    const msg = filterActive
+      ? '<div class="empty-list"><p>No classes match the filter.</p></div>'
+      : '<div class="empty-list"><p>No classes yet.</p><p class="hint">Tap + New Class to add one.</p></div>';
+    container.innerHTML = msg;
     return;
   }
-  // Group classes by series_id (null bucket holds standalone classes).
+  // Group filtered classes by series_id (null bucket holds standalone classes).
   const bySeries = new Map();
-  for (const c of classes) {
+  for (const c of filtered) {
     const sid = c.series_id || null;
     if (!bySeries.has(sid)) bySeries.set(sid, []);
     bySeries.get(sid).push(c);
   }
 
   // Render order: standalone classes first (if any), then all series sorted
-  // by name — including empty ones so they remain reachable.
+  // by name. When a filter is active, skip series that have no matching
+  // classes (they're just noise). Without a filter, include empty series so
+  // they remain reachable for editing/deletion.
   const groups = [];
   const standalone = bySeries.get(null) || [];
   if (standalone.length > 0) {
     groups.push({ sid: null, name: 'Standalone classes', classes: standalone });
   }
   for (const s of [...(allSeries || [])].sort((a, b) => a.name.localeCompare(b.name))) {
-    groups.push({ sid: s.id, name: s.name, classes: bySeries.get(s.id) || [] });
+    const seriesClasses = bySeries.get(s.id) || [];
+    if (filterActive && seriesClasses.length === 0) continue;
+    groups.push({ sid: s.id, name: s.name, classes: seriesClasses });
   }
 
   let html = '';
@@ -2726,6 +2768,85 @@ async function clearSetFilter() {
   renderSetList(state.sets, state.setSearch);
 }
 
+// ===== CLASS FILTER MODAL =====
+
+function renderClassFilterSeriesChips() {
+  const ids = state.filterDraftClassSeriesIds;
+  const container = document.getElementById('clf-series-chips');
+  if (!ids.length) { container.innerHTML = ''; return; }
+  container.innerHTML = ids.map(id => {
+    const s = (state.allSeries || []).find(x => x.id === id);
+    const label = s ? s.name : `Series ${id}`;
+    return `<span class="instructor-chip">${esc(label)}<button class="chip-remove" data-series-id="${id}">&times;</button></span>`;
+  }).join('');
+  container.querySelectorAll('.chip-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = Number(btn.dataset.seriesId);
+      state.filterDraftClassSeriesIds = state.filterDraftClassSeriesIds.filter(x => x !== id);
+      renderClassFilterSeriesChips();
+    });
+  });
+}
+
+function renderClassFilterSeriesSuggestions(query) {
+  const box = document.getElementById('clf-series-suggestions');
+  const taken = new Set(state.filterDraftClassSeriesIds);
+  const matches = (state.allSeries || [])
+    .filter(s => !taken.has(s.id) && s.name.toLowerCase().includes(query.toLowerCase()))
+    .slice(0, 8);
+  if (!matches.length) { box.classList.add('hidden'); return; }
+  box.innerHTML = matches.map(s =>
+    `<div class="typeahead-item" data-series-id="${s.id}">${esc(s.name)}</div>`
+  ).join('');
+  box.classList.remove('hidden');
+  box.querySelectorAll('.typeahead-item').forEach(item => {
+    item.addEventListener('click', () => {
+      state.filterDraftClassSeriesIds.push(Number(item.dataset.seriesId));
+      document.getElementById('clf-series-input').value = '';
+      box.classList.add('hidden');
+      renderClassFilterSeriesChips();
+    });
+  });
+}
+
+function openClassFilter() {
+  const f = state.classFilter;
+  state.filterDraftClassSeriesIds = [...f.seriesIds];
+  document.getElementById('clf-series-input').value = '';
+  document.getElementById('clf-series-suggestions').classList.add('hidden');
+  document.getElementById('clf-instrument').value = f.instrument;
+  document.getElementById('clf-organizer').value = f.organizer;
+  document.getElementById('clf-instructor').value = f.instructor;
+  document.getElementById('clf-date-from').value = f.dateFrom;
+  document.getElementById('clf-date-to').value = f.dateTo;
+  renderClassFilterSeriesChips();
+  document.getElementById('modal-class-filter').classList.remove('hidden');
+}
+
+function closeClassFilter() {
+  document.getElementById('modal-class-filter').classList.add('hidden');
+}
+
+function applyClassFilterFromModal() {
+  state.classFilter = {
+    seriesIds: [...state.filterDraftClassSeriesIds],
+    instrument: document.getElementById('clf-instrument').value.trim(),
+    organizer: document.getElementById('clf-organizer').value.trim(),
+    instructor: document.getElementById('clf-instructor').value.trim(),
+    dateFrom: document.getElementById('clf-date-from').value,
+    dateTo: document.getElementById('clf-date-to').value,
+  };
+  closeClassFilter();
+  renderClassesList(state.classes, state.allSeries);
+}
+
+function clearClassFilter() {
+  state.classFilter = { seriesIds: [], instrument: '', organizer: '', instructor: '', dateFrom: '', dateTo: '' };
+  state.filterDraftClassSeriesIds = [];
+  closeClassFilter();
+  renderClassesList(state.classes, state.allSeries);
+}
+
 // ===== INCIPIT LIVE PREVIEW IN FORM =====
 
 let previewDebounceTimer = null;
@@ -2821,6 +2942,17 @@ function init() {
   document.getElementById('nav-tunes').addEventListener('click', goToTunes);
   document.getElementById('nav-sets').addEventListener('click', goToSets);
   document.getElementById('nav-classes').addEventListener('click', goToClasses);
+
+  // Class filter
+  document.getElementById('btn-class-filter').addEventListener('click', openClassFilter);
+  document.getElementById('modal-class-filter').querySelector('.modal-backdrop').addEventListener('click', closeClassFilter);
+  document.getElementById('btn-apply-class-filter').addEventListener('click', applyClassFilterFromModal);
+  document.getElementById('btn-clear-class-filter').addEventListener('click', clearClassFilter);
+  document.getElementById('clf-series-input').addEventListener('input', e => {
+    const q = e.target.value.trim();
+    if (q) renderClassFilterSeriesSuggestions(q);
+    else document.getElementById('clf-series-suggestions').classList.add('hidden');
+  });
 
   // Classes feature: export, import, + New Class, form submit, cancel, inline series quick-create.
   document.getElementById('btn-export-classes').addEventListener('click', () => {

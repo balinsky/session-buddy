@@ -336,6 +336,7 @@
         <div class="view-toolbar">
           <h2>My Classes</h2>
           <div class="toolbar-actions">
+            <button id="btn-class-filter" class="btn btn-small btn-outline">Filter</button>
             <button id="btn-export-classes" class="btn btn-small btn-outline">Export CSV</button>
             <button id="btn-import-classes" class="btn btn-small btn-outline">Import CSV</button>
             <button id="btn-add-class" class="btn btn-small btn-primary">+ New Class</button>
@@ -654,6 +655,46 @@
           <div class="filter-footer">
             <button id="btn-apply-set-filter" class="btn btn-primary">Apply</button>
             <button id="btn-clear-set-filter" class="btn btn-outline">Clear All</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CLASS FILTER MODAL -->
+      <div id="modal-class-filter" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-card filter-panel">
+          <h3>Filter Classes</h3>
+          <div class="filter-scroll">
+            <div class="filter-section">
+              <div class="filter-label">Series</div>
+              <div id="clf-series-chips" class="instructor-chips"></div>
+              <input type="text" id="clf-series-input" class="filter-text-input" placeholder="Search series…" autocomplete="off" />
+              <div id="clf-series-suggestions" class="typeahead-suggestions hidden"></div>
+            </div>
+            <div class="filter-section">
+              <div class="filter-label">Instrument</div>
+              <input type="text" id="clf-instrument" class="filter-text-input" placeholder="e.g. D flute" autocomplete="off" />
+            </div>
+            <div class="filter-section">
+              <div class="filter-label">Organizer</div>
+              <input type="text" id="clf-organizer" class="filter-text-input" placeholder="e.g. OAIM" autocomplete="off" />
+            </div>
+            <div class="filter-section">
+              <div class="filter-label">Instructor</div>
+              <input type="text" id="clf-instructor" class="filter-text-input" placeholder="e.g. Kevin Crawford" autocomplete="off" />
+            </div>
+            <div class="filter-section">
+              <div class="filter-label">Date range</div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <input type="date" id="clf-date-from" class="filter-text-input" style="flex:1;" />
+                <span style="color:var(--color-text-muted)">to</span>
+                <input type="date" id="clf-date-to" class="filter-text-input" style="flex:1;" />
+              </div>
+            </div>
+          </div>
+          <div class="filter-footer">
+            <button id="btn-apply-class-filter" class="btn btn-primary">Apply</button>
+            <button id="btn-clear-class-filter" class="btn btn-outline">Clear All</button>
           </div>
         </div>
       </div>
