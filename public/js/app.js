@@ -276,6 +276,7 @@ const NAV_SECTION = {
   classes: 'classes', 'class-detail': 'classes', 'class-form': 'classes',
   'series-detail': 'classes', 'series-form': 'classes',
   'musician-detail': 'classes', 'musician-form': 'classes',
+  'class-import': 'classes',
 };
 
 function showView(viewId, pushToHistory = true) {
@@ -310,6 +311,7 @@ const VIEW_TITLES = {
   'class-detail': 'Class Detail',
   'series-detail': 'Series Detail',
   'musician-detail': 'Musician',
+  'class-import': 'Import Classes CSV',
 };
 
 function goBack() {
@@ -2313,6 +2315,38 @@ function goToSetImport() {
   restoreSetImportUndo();
 }
 
+function restoreClassImportUndo() {
+  const saved = localStorage.getItem('lastClassImport');
+  const undoSection = document.getElementById('class-import-undo-section');
+  if (!saved) { undoSection.classList.add('hidden'); return; }
+  const { createdIds, count } = JSON.parse(saved);
+  undoSection.classList.remove('hidden');
+  document.getElementById('btn-undo-class-import').onclick = async () => {
+    if (!confirm(`Delete the ${count} class${count !== 1 ? 'es' : ''} that were imported?`)) return;
+    undoSection.classList.add('hidden');
+    const statusEl = document.getElementById('class-import-status');
+    statusEl.textContent = 'Undoing…';
+    statusEl.className = 'import-status';
+    await Promise.allSettled(createdIds.map(id => API.deleteClass(id)));
+    localStorage.removeItem('lastClassImport');
+    statusEl.textContent = `Import undone — ${count} class${count !== 1 ? 'es' : ''} deleted.`;
+    statusEl.className = 'import-status';
+    document.getElementById('btn-run-class-import').disabled = false;
+  };
+}
+
+function goToClassImport() {
+  showView('class-import');
+  document.getElementById('header-title').textContent = 'Import Classes CSV';
+  document.getElementById('class-import-status').textContent = '';
+  document.getElementById('class-import-status').className = 'import-status';
+  document.getElementById('btn-run-class-import').disabled = true;
+  document.getElementById('class-csv-file-label').textContent = 'Tap to choose a CSV file';
+  document.getElementById('class-csv-file-input').value = '';
+  document.getElementById('class-import-error-section').classList.add('hidden');
+  restoreClassImportUndo();
+}
+
 function downloadCsv(filename, headers, rows) {
   function escape(val) {
     const s = String(val == null ? '' : val);
@@ -2788,7 +2822,66 @@ function init() {
   document.getElementById('nav-sets').addEventListener('click', goToSets);
   document.getElementById('nav-classes').addEventListener('click', goToClasses);
 
-  // Classes feature: + New Class, form submit, cancel, inline series quick-create.
+  // Classes feature: export, import, + New Class, form submit, cancel, inline series quick-create.
+  document.getElementById('btn-export-classes').addEventListener('click', () => {
+    window.location.href = API.exportClassesCsvUrl();
+  });
+
+  document.getElementById('btn-import-classes').addEventListener('click', goToClassImport);
+
+  // Class CSV import
+  const classCsvInput = document.getElementById('class-csv-file-input');
+  const runClassImportBtn = document.getElementById('btn-run-class-import');
+
+  classCsvInput.addEventListener('change', () => {
+    if (classCsvInput.files[0]) {
+      document.getElementById('class-csv-file-label').textContent = classCsvInput.files[0].name;
+      runClassImportBtn.disabled = false;
+    }
+  });
+
+  runClassImportBtn.addEventListener('click', async () => {
+    const file = classCsvInput.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById('class-import-status');
+    runClassImportBtn.disabled = true;
+    statusEl.textContent = 'Importing…';
+    statusEl.className = 'import-status';
+    document.getElementById('class-import-error-section').classList.add('hidden');
+    document.getElementById('class-import-undo-section').classList.add('hidden');
+
+    try {
+      const result = await API.importClassesCsv(file);
+      const n = result.imported;
+      const s = result.skipped || 0;
+      const parts = [];
+      if (n > 0) parts.push(`${n} class${n !== 1 ? 'es' : ''} imported`);
+      if (s > 0) parts.push(`${s} skipped (already exist)`);
+      if (parts.length === 0) parts.push('No classes imported');
+      statusEl.textContent = parts.join(', ') + '.';
+      statusEl.className = n > 0 ? 'import-status success' : 'import-status error';
+      if (n === 0 && s === 0) runClassImportBtn.disabled = false;
+
+      if (result.errorRows?.length > 0) {
+        document.getElementById('class-import-error-section').classList.remove('hidden');
+        document.getElementById('btn-download-class-errors').onclick = () => {
+          downloadCsv('class-import-errors.csv',
+            ['Name', 'Series', 'Error'],
+            result.errorRows.map(r => [r.Name, r.Series || '', r.Error || '']));
+        };
+      }
+
+      if (n > 0 && result.createdIds?.length > 0) {
+        localStorage.setItem('lastClassImport', JSON.stringify({ createdIds: result.createdIds, count: n }));
+        restoreClassImportUndo();
+      }
+    } catch (err) {
+      statusEl.textContent = 'Import failed: ' + err.message;
+      statusEl.className = 'import-status error';
+      runClassImportBtn.disabled = false;
+    }
+  });
+
   document.getElementById('btn-add-class').addEventListener('click', () => goToClassForm(null));
   document.getElementById('class-form').addEventListener('submit', saveClassForm);
   document.getElementById('cf-cancel-btn').addEventListener('click', goBack);

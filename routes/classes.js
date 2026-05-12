@@ -5,8 +5,46 @@
 
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const { parse } = require('csv-parse/sync');
 const db = require('../db/database');
 const requireUser = require('../middleware/requireUser');
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Semicolons separate multi-value cells (instructors, tunes). A plain split
+// would leave stray whitespace around separators, so we trim each piece.
+function splitSemi(str) {
+  return (str || '').split(';').map(s => s.trim()).filter(Boolean);
+}
+
+function csvRow(klass) {
+  const seriesName = klass.series ? klass.series.name : '';
+  const instructors = (klass.instructors || []).map(m => m.name).join('; ');
+  const tunes = klass.tunes || [];
+  const tuneNames = tunes.map(t => t.name).join('; ');
+  const tuneIds = tunes.map(t => t.thesession_id || '').join('; ');
+  return [
+    klass.name,
+    seriesName,
+    klass.organizer || '',
+    klass.instrument || '',
+    klass.date || '',
+    klass.notes || '',
+    instructors,
+    tuneNames,
+    tuneIds,
+  ];
+}
+
+function buildCsv(headers, rows) {
+  const escape = v => {
+    const s = String(v ?? '');
+    return s.includes(',') || s.includes('"') || s.includes('\n')
+      ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  return [headers, ...rows].map(r => r.map(escape).join(',')).join('\r\n');
+}
 
 router.use(requireUser);
 
@@ -18,6 +56,152 @@ router.get('/classes', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Export and import must be declared before GET /classes/:id so that the
+// literal path segment "export" / "import" is matched before Express tries
+// to parse it as an :id parameter.
+
+// --- /api/classes/export ------------------------------------------------
+
+const CSV_HEADERS = ['Name', 'Series', 'Organizer', 'Instrument', 'Date', 'Notes', 'Instructors', 'Tune Names', 'Tune IDs'];
+
+router.get('/classes/export', async (req, res) => {
+  try {
+    const classes = await db.getClassesWithDetails(req.user.id);
+    const csv = buildCsv(CSV_HEADERS, classes.map(csvRow));
+    res.set('Content-Type', 'text/csv');
+    res.set('Content-Disposition', 'attachment; filename="classes.csv"');
+    res.send(csv);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- /api/classes/import ------------------------------------------------
+
+router.post('/classes/import', upload.single('csv'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'CSV file is required.' });
+
+  let records;
+  try {
+    records = parse(req.file.buffer, { columns: true, skip_empty_lines: true, trim: true, bom: true });
+  } catch (err) {
+    return res.status(400).json({ error: 'Could not parse CSV: ' + err.message });
+  }
+
+  // Case-insensitive column lookup (mirrors tune import).
+  function col(row, name) {
+    if (row[name] !== undefined) return row[name] || '';
+    const key = Object.keys(row).find(k => k.toLowerCase() === name.toLowerCase());
+    return key ? (row[key] || '') : '';
+  }
+
+  // Load existing classes, series, and tunes for dup/match checks.
+  let existingClasses, existingTunes;
+  try {
+    [existingClasses, existingTunes] = await Promise.all([
+      db.getClassesByUser(req.user.id),
+      db.getTunesByUser(req.user.id),
+    ]);
+  } catch (err) {
+    return res.status(500).json({ error: 'Could not load existing data: ' + err.message });
+  }
+
+  // Existing class dup index: "lowercased name|series_id_or_null"
+  const existingClassKeys = new Set(
+    existingClasses.map(c => `${(c.name || '').toLowerCase()}|${c.series_id ?? ''}`)
+  );
+
+  // Tune lookup indexes.
+  const tuneByThesessionId = new Map();
+  const tuneByName = new Map();
+  for (const t of existingTunes) {
+    if (t.thesession_id) tuneByThesessionId.set(t.thesession_id.trim(), t);
+    const n = (t.name || '').toLowerCase().trim();
+    if (n && !tuneByName.has(n)) tuneByName.set(n, t);
+  }
+
+  const imported = [];
+  const errorRows = [];
+  let skipped = 0;
+
+  for (const row of records) {
+    const name = col(row, 'Name').trim();
+    if (!name) continue;
+
+    // Resolve series (find-or-create).
+    const seriesName = col(row, 'Series').trim();
+    let seriesId = null;
+    if (seriesName) {
+      try {
+        const series = await db.findOrCreateSeriesByName(req.user.id, seriesName);
+        seriesId = series.id;
+      } catch (err) {
+        errorRows.push({ Name: name, Series: seriesName, Error: 'Could not create series: ' + err.message });
+        continue;
+      }
+    }
+
+    // Dup check: same name + series already exists.
+    const dupKey = `${name.toLowerCase()}|${seriesId ?? ''}`;
+    if (existingClassKeys.has(dupKey)) {
+      skipped++;
+      errorRows.push({ Name: name, Series: seriesName, Error: 'Class already exists (skipped)' });
+      continue;
+    }
+
+    // Resolve instructors (find-or-create musicians).
+    const instructorNames = splitSemi(col(row, 'Instructors'));
+    const instructorIds = [];
+    for (const iName of instructorNames) {
+      try {
+        const m = await db.findOrCreateMusicianByName(req.user.id, iName);
+        instructorIds.push(m.id);
+      } catch (err) {
+        errorRows.push({ Name: name, Series: seriesName, Error: `Could not create musician "${iName}": ${err.message}` });
+      }
+    }
+
+    // Resolve tunes. Tune Names and Tune IDs are parallel semicolon lists;
+    // prefer ID match over name match for each position.
+    const tuneNamesList = splitSemi(col(row, 'Tune Names'));
+    const tuneIdsList = splitSemi(col(row, 'Tune IDs'));
+    const maxTunes = Math.max(tuneNamesList.length, tuneIdsList.length);
+    const tuneIds = [];
+    for (let i = 0; i < maxTunes; i++) {
+      const sid = (tuneIdsList[i] || '').trim();
+      const tName = (tuneNamesList[i] || '').trim();
+      let tune = sid ? tuneByThesessionId.get(sid) : null;
+      if (!tune && tName) tune = tuneByName.get(tName.toLowerCase());
+      if (tune) {
+        tuneIds.push(tune.id);
+      } else {
+        const desc = sid ? `ID ${sid}` : `"${tName}"`;
+        errorRows.push({ Name: name, Series: seriesName, Error: `Tune ${desc} not found — class imported without it` });
+      }
+    }
+
+    // Create the class.
+    try {
+      const klass = await db.createClass(req.user.id, {
+        name,
+        series_id: seriesId,
+        organizer: col(row, 'Organizer').trim() || null,
+        instrument: col(row, 'Instrument').trim() || null,
+        date: col(row, 'Date').trim() || null,
+        notes: col(row, 'Notes').trim() || null,
+        tune_ids: tuneIds,
+        instructor_ids: instructorIds,
+      });
+      imported.push(klass.id);
+      existingClassKeys.add(dupKey);  // prevent double-import in same file
+    } catch (err) {
+      errorRows.push({ Name: name, Series: seriesName, Error: 'Database error: ' + err.message });
+    }
+  }
+
+  res.json({ imported: imported.length, skipped, errorRows, createdIds: imported });
 });
 
 router.get('/classes/:id', async (req, res) => {

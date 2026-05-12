@@ -99,6 +99,12 @@ const API = (() => {
     createClass: (data) => request('POST', '/api/classes', data),
     updateClass: (id, data) => request('PUT', `/api/classes/${id}`, data),
     deleteClass: (id) => request('DELETE', `/api/classes/${id}`),
+    exportClassesCsvUrl: () => `/api/classes/export?code=${encodeURIComponent(localStorage.getItem('syncCode') || '')}`,
+    importClassesCsv: (file) => {
+      const form = new FormData();
+      form.append('csv', file);
+      return request('POST', '/api/classes/import', form, true);
+    },
 
     // Class series
     getClassSeries: () => request('GET', '/api/class-series'),

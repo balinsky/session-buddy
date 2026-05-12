@@ -14,6 +14,12 @@ const SYNC = 'test-code';
 
 beforeEach(() => {
   db.getUserBySyncCode.mockResolvedValue(VALID_USER);
+  db.findOrCreateSeriesByName.mockResolvedValue({ id: 5, name: 'Test Series' });
+  db.findOrCreateMusicianByName.mockResolvedValue({ id: 10, name: 'Kevin Crawford' });
+  db.getClassesWithDetails.mockResolvedValue([]);
+  db.getClassesByUser.mockResolvedValue([]);
+  db.getTunesByUser.mockResolvedValue([]);
+  db.createClass.mockResolvedValue({ id: 99, name: 'New Class', series: null, instructors: [], tunes: [] });
 });
 
 // ── Auth middleware (smoke) ──────────────────────────────────────────────────
@@ -204,5 +210,131 @@ describe('DELETE /api/musicians/:id', () => {
   it('returns 204', async () => {
     const res = await request(app).delete('/api/musicians/10').set('x-sync-code', SYNC);
     expect(res.status).toBe(204);
+  });
+});
+
+// ── GET /api/classes/export ──────────────────────────────────────────────────
+
+describe('GET /api/classes/export', () => {
+  it('returns a CSV with the correct headers', async () => {
+    db.getClassesWithDetails.mockResolvedValue([]);
+    const res = await request(app).get('/api/classes/export').set('x-sync-code', SYNC);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/csv/);
+    const firstLine = res.text.split('\r\n')[0];
+    expect(firstLine).toBe('Name,Series,Organizer,Instrument,Date,Notes,Instructors,Tune Names,Tune IDs');
+  });
+
+  it('serialises a class with instructors and tunes into one CSV row', async () => {
+    db.getClassesWithDetails.mockResolvedValue([{
+      id: 1,
+      name: 'Class 3',
+      organizer: 'OAIM',
+      instrument: 'High D Whistle',
+      date: '2025-03-15',
+      notes: '',
+      series: { id: 5, name: 'OAIM Spring 2025 Whistle' },
+      instructors: [{ id: 10, name: 'Kevin Crawford' }, { id: 11, name: 'Nuala Kennedy' }],
+      tunes: [
+        { id: 100, name: "Morrison's Jig", thesession_id: '1' },
+        { id: 200, name: 'The Kesh Jig', thesession_id: '38' },
+      ],
+    }]);
+    const res = await request(app).get('/api/classes/export').set('x-sync-code', SYNC);
+    const lines = res.text.split('\r\n');
+    expect(lines).toHaveLength(2);  // header + 1 data row
+    const dataLine = lines[1];
+    expect(dataLine).toContain('Class 3');
+    expect(dataLine).toContain('OAIM Spring 2025 Whistle');
+    expect(dataLine).toContain('Kevin Crawford; Nuala Kennedy');
+    expect(dataLine).toContain("Morrison's Jig; The Kesh Jig");
+    expect(dataLine).toContain('1; 38');
+  });
+});
+
+// ── POST /api/classes/import ─────────────────────────────────────────────────
+
+describe('POST /api/classes/import', () => {
+  it('returns 400 when no CSV is attached', async () => {
+    const res = await request(app).post('/api/classes/import').set('x-sync-code', SYNC);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/csv file is required/i);
+  });
+
+  it('imports a new class and returns imported=1', async () => {
+    const csv = 'Name,Series,Organizer\nClass 3,OAIM Spring 2025,OAIM';
+    const res = await request(app).post('/api/classes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'classes.csv');
+    expect(res.status).toBe(200);
+    expect(res.body.imported).toBe(1);
+    expect(res.body.skipped).toBe(0);
+    expect(db.findOrCreateSeriesByName).toHaveBeenCalledWith(1, 'OAIM Spring 2025');
+    expect(db.createClass).toHaveBeenCalledWith(1, expect.objectContaining({ name: 'Class 3', organizer: 'OAIM' }));
+  });
+
+  it('skips a class that already exists (same name + series)', async () => {
+    db.getClassesByUser.mockResolvedValue([
+      { id: 7, name: 'Class 3', series_id: 5 },
+    ]);
+    db.findOrCreateSeriesByName.mockResolvedValue({ id: 5, name: 'OAIM Spring 2025' });
+    const csv = 'Name,Series\nClass 3,OAIM Spring 2025';
+    const res = await request(app).post('/api/classes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'classes.csv');
+    expect(res.body.imported).toBe(0);
+    expect(res.body.skipped).toBe(1);
+    expect(res.body.errorRows[0].Error).toMatch(/already exists/i);
+    expect(db.createClass).not.toHaveBeenCalled();
+  });
+
+  it('matches tunes by Thesession ID and passes their IDs to createClass', async () => {
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: "Morrison's Jig", thesession_id: '1', class_ids: [] },
+    ]);
+    const csv = "Name,Tune Names,Tune IDs\nClass 3,Morrison's Jig,1";
+    const res = await request(app).post('/api/classes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'classes.csv');
+    expect(res.body.imported).toBe(1);
+    expect(db.createClass).toHaveBeenCalledWith(1, expect.objectContaining({ tune_ids: [100] }));
+  });
+
+  it('falls back to name match when Tune ID column is blank', async () => {
+    db.getTunesByUser.mockResolvedValue([
+      { id: 200, name: 'The Kesh Jig', thesession_id: '', class_ids: [] },
+    ]);
+    const csv = 'Name,Tune Names,Tune IDs\nClass 3,The Kesh Jig,';
+    const res = await request(app).post('/api/classes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'classes.csv');
+    expect(res.body.imported).toBe(1);
+    expect(db.createClass).toHaveBeenCalledWith(1, expect.objectContaining({ tune_ids: [200] }));
+  });
+
+  it('adds an error row for unmatched tunes but still imports the class', async () => {
+    db.getTunesByUser.mockResolvedValue([]);
+    const csv = 'Name,Tune Names,Tune IDs\nClass 3,Unknown Tune,9999';
+    const res = await request(app).post('/api/classes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'classes.csv');
+    expect(res.body.imported).toBe(1);
+    expect(res.body.errorRows).toHaveLength(1);
+    expect(res.body.errorRows[0].Error).toMatch(/not found/i);
+    expect(db.createClass).toHaveBeenCalledWith(1, expect.objectContaining({ tune_ids: [] }));
+  });
+
+  it('find-or-creates musicians for the Instructors column', async () => {
+    db.findOrCreateMusicianByName.mockImplementation((uid, name) =>
+      Promise.resolve({ id: name === 'Kevin Crawford' ? 10 : 11, name })
+    );
+    const csv = 'Name,Instructors\nClass 3,Kevin Crawford; Nuala Kennedy';
+    const res = await request(app).post('/api/classes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'classes.csv');
+    expect(res.body.imported).toBe(1);
+    expect(db.findOrCreateMusicianByName).toHaveBeenCalledWith(1, 'Kevin Crawford');
+    expect(db.findOrCreateMusicianByName).toHaveBeenCalledWith(1, 'Nuala Kennedy');
+    expect(db.createClass).toHaveBeenCalledWith(1, expect.objectContaining({ instructor_ids: [10, 11] }));
   });
 });

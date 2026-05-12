@@ -291,6 +291,47 @@ async function attachTuneToClass(tuneId, classId) {
   );
 }
 
+// Find a class series by name (case-insensitive) for this user, creating it
+// if absent. Used by CSV import so rows can reference series by name.
+async function findOrCreateSeriesByName(userId, name) {
+  const { rows } = await pool.query(
+    'SELECT * FROM class_series WHERE user_id = $1 AND LOWER(name) = LOWER($2)',
+    [userId, name]
+  );
+  if (rows[0]) return rows[0];
+  const { rows: created } = await pool.query(
+    'INSERT INTO class_series (user_id, name) VALUES ($1, $2) RETURNING *',
+    [userId, name]
+  );
+  return created[0];
+}
+
+// Find a musician by name (case-insensitive) for this user, creating if absent.
+// Used by class CSV import for instructor names.
+async function findOrCreateMusicianByName(userId, name) {
+  const { rows } = await pool.query(
+    'SELECT * FROM musician WHERE user_id = $1 AND LOWER(name) = LOWER($2)',
+    [userId, name]
+  );
+  if (rows[0]) return rows[0];
+  const { rows: created } = await pool.query(
+    'INSERT INTO musician (user_id, name) VALUES ($1, $2) RETURNING *',
+    [userId, name]
+  );
+  return created[0];
+}
+
+// Returns all classes for a user with instructors and tunes pre-joined, for
+// use by the CSV export endpoint. One DB call per class (via _enrichClass) but
+// enrichment is already the pattern for the detail view.
+async function getClassesWithDetails(userId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM class WHERE user_id = $1 ORDER BY date DESC NULLS LAST, name',
+    [userId]
+  );
+  return Promise.all(rows.map(c => _enrichClass(c, true)));
+}
+
 // Per-tune column list. Status & playable instruments live in the
 // tune_instrument_status table (Phase 6 of design/PerInstrumentStatus.md);
 // the legacy `learning_status` and `instrument` columns are no longer read or
@@ -1005,6 +1046,7 @@ module.exports = {
   getTuneInstrumentStatuses, setTuneInstrumentStatus, deleteTuneInstrumentStatus,
   syncTuneInstrumentRows, bulkInsertTuneInstrumentStatuses,
   syncTuneClasses, findOrCreateClassByName, attachTuneToClass,
+  findOrCreateSeriesByName, findOrCreateMusicianByName, getClassesWithDetails,
   getSetsByUser, getSetById, createSet, updateSet, deleteSet, patchSet, practiceSet,
   getClassesByUser, getClassById, createClass, updateClass, deleteClass,
   getClassSeriesByUser, getClassSeriesById, createClassSeries, updateClassSeries, deleteClassSeries,

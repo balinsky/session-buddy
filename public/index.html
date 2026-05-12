@@ -336,10 +336,40 @@
         <div class="view-toolbar">
           <h2>My Classes</h2>
           <div class="toolbar-actions">
+            <button id="btn-export-classes" class="btn btn-small btn-outline">Export CSV</button>
+            <button id="btn-import-classes" class="btn btn-small btn-outline">Import CSV</button>
             <button id="btn-add-class" class="btn btn-small btn-primary">+ New Class</button>
           </div>
         </div>
         <div id="class-list" class="item-list"></div>
+      </div>
+
+      <!-- CLASS IMPORT -->
+      <div id="view-class-import" class="view">
+        <h2>Import Classes from CSV</h2>
+        <p class="hint">Upload a CSV file to add classes to your collection.</p>
+        <div class="import-area">
+          <label class="file-drop-zone" id="class-csv-drop-zone">
+            <span id="class-csv-file-label">Tap to choose a CSV file</span>
+            <input id="class-csv-file-input" type="file" accept=".csv" style="display:none" />
+          </label>
+          <button id="btn-run-class-import" class="btn btn-primary btn-large" disabled>Import Classes</button>
+          <div id="class-import-status" class="import-status"></div>
+          <div id="class-import-undo-section" class="hidden import-undo-section">
+            <button id="btn-undo-class-import" class="btn btn-outline">Undo Last Import</button>
+          </div>
+          <div id="class-import-error-section" class="hidden" style="margin-top:12px;text-align:center;">
+            <p class="hint" style="margin-bottom:8px;">Some rows had issues. Download the report to see details.</p>
+            <button id="btn-download-class-errors" class="btn btn-outline">Download Errors CSV</button>
+          </div>
+        </div>
+        <div class="import-notes">
+          <strong>Expected columns:</strong> Name, Series, Organizer, Instrument, Date, Notes, Instructors, Tune Names, Tune IDs
+          <br/><br/>
+          <strong>Instructors</strong> and <strong>Tune Names / Tune IDs</strong> accept multiple values separated by semicolons (e.g. <code>Kevin Crawford; Nuala Kennedy</code>). Tune Names and Tune IDs are paired — position 1 of Tune Names matches position 1 of Tune IDs. Tune ID match is preferred; Name is used as a fallback.
+          <br/><br/>
+          <strong>Duplicate handling:</strong> A class is skipped if one with the same name and series already exists. Unmatched tunes are reported in the error file but the class is still imported without them.
+        </div>
       </div>
 
       <!-- CLASS DETAIL -->
