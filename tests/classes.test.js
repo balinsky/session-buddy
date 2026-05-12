@@ -309,6 +309,26 @@ describe('POST /api/classes/import', () => {
     expect(db.createClass).not.toHaveBeenCalled();
   });
 
+  it('attaches tune to existing class even when DB series_id differs from CSV series', async () => {
+    // Class exists in DB with no series (series_id null), but CSV specifies a series.
+    // The name-only fallback should detect the dup and attach the tune.
+    db.getClassesByUser.mockResolvedValue([
+      { id: 7, name: 'Class 3', series_id: null },
+    ]);
+    db.findOrCreateSeriesByName.mockResolvedValue({ id: 99, name: 'New Series' });
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: "Morrison's Jig", thesession_id: '1', class_ids: [] },
+    ]);
+    const csv = "Name,Series,Tune Names,Tune IDs\nClass 3,New Series,Morrison's Jig,1";
+    const res = await request(app).post('/api/classes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'classes.csv');
+    expect(res.body.imported).toBe(0);
+    expect(res.body.tunesAttached).toBe(1);
+    expect(db.attachTuneToClass).toHaveBeenCalledWith(100, 7);
+    expect(db.createClass).not.toHaveBeenCalled();
+  });
+
   it('matches tunes by Thesession ID and passes their IDs to createClass', async () => {
     db.getTunesByUser.mockResolvedValue([
       { id: 100, name: "Morrison's Jig", thesession_id: '1', class_ids: [] },

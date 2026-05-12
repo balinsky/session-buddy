@@ -108,10 +108,17 @@ router.post('/classes/import', upload.single('csv'), async (req, res) => {
     return res.status(500).json({ error: 'Could not load existing data: ' + err.message });
   }
 
-  // Existing class dup index: dupKey -> {id} so we can attach tunes to existing classes.
+  // Existing class dup index: dupKey -> class object, keyed by "name|series_id".
+  // Also keep a name-only index for fallback when the series differs.
   const existingClassMap = new Map(
     existingClasses.map(c => [`${(c.name || '').toLowerCase()}|${c.series_id ?? ''}`, c])
   );
+  const existingClassByName = new Map();
+  for (const c of existingClasses) {
+    const n = (c.name || '').toLowerCase();
+    if (!existingClassByName.has(n)) existingClassByName.set(n, []);
+    existingClassByName.get(n).push(c);
+  }
 
   // Tune lookup indexes.
   const tuneByThesessionId = new Map();
@@ -166,9 +173,13 @@ router.post('/classes/import', upload.single('csv'), async (req, res) => {
       }
     }
 
-    // Dup check: class with same name + series already exists.
+    // Dup check: exact match on name + series first; fall back to name-only if
+    // exactly one class with that name exists (handles the case where the class
+    // was created without a series or with a different series in the DB).
     const dupKey = `${name.toLowerCase()}|${seriesId ?? ''}`;
-    const existingClass = existingClassMap.get(dupKey);
+    const nameCandidates = existingClassByName.get(name.toLowerCase()) || [];
+    const existingClass = existingClassMap.get(dupKey) ||
+      (nameCandidates.length === 1 ? nameCandidates[0] : null);
     if (existingClass) {
       // Attach any tunes from this row to the existing class instead of skipping.
       const tuneIds = resolveRowTunes(name, seriesName, row);

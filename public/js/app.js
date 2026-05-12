@@ -2854,20 +2854,25 @@ function init() {
       const result = await API.importClassesCsv(file);
       const n = result.imported;
       const s = result.skipped || 0;
+      const t = result.tunesAttached || 0;
       const parts = [];
       if (n > 0) parts.push(`${n} class${n !== 1 ? 'es' : ''} imported`);
+      if (t > 0) parts.push(`${t} tune${t !== 1 ? 's' : ''} added to existing classes`);
       if (s > 0) parts.push(`${s} skipped (already exist)`);
       if (parts.length === 0) parts.push('No classes imported');
       statusEl.textContent = parts.join(', ') + '.';
-      statusEl.className = n > 0 ? 'import-status success' : 'import-status error';
-      if (n === 0 && s === 0) runClassImportBtn.disabled = false;
+      const success = n > 0 || t > 0;
+      statusEl.className = success ? 'import-status success' : 'import-status error';
+      if (!success) runClassImportBtn.disabled = false;
 
-      if (result.errorRows?.length > 0) {
+      // Only show error download for genuine errors (not the "tune added" info rows).
+      const trueErrors = (result.errorRows || []).filter(r => !/already exists —/.test(r.Error));
+      if (trueErrors.length > 0) {
         document.getElementById('class-import-error-section').classList.remove('hidden');
         document.getElementById('btn-download-class-errors').onclick = () => {
           downloadCsv('class-import-errors.csv',
             ['Name', 'Series', 'Error'],
-            result.errorRows.map(r => [r.Name, r.Series || '', r.Error || '']));
+            trueErrors.map(r => [r.Name, r.Series || '', r.Error || '']));
         };
       }
 
