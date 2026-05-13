@@ -776,7 +776,7 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
   document.getElementById('btn-delete-tune').addEventListener('click', () => deleteTune(tune));
 
   // Per-instrument status table — tap badge to cycle, × to remove, picker to add.
-  const STATUS_CYCLE = { 'Not Learned': 'Learning', 'Learning': 'Memorized', 'Memorized': 'Not Learned' };
+  const INSTRUMENT_STATUS_NEXT = { 'Not Learned': 'Learning', 'Learning': 'Memorized', 'Memorized': 'Not Learned' };
 
   async function refreshInstrumentTable() {
     try {
@@ -801,7 +801,7 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
       const instrument = row.dataset.instrument;
       try {
         if (cycle) {
-          const next = STATUS_CYCLE[cycle.dataset.status] || 'Not Learned';
+          const next = INSTRUMENT_STATUS_NEXT[cycle.dataset.status] || 'Not Learned';
           await API.setTuneInstrumentStatus(tune.id, instrument, next);
           await refreshInstrumentTable();
         } else if (remove) {
