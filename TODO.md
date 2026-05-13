@@ -7,6 +7,7 @@ This is a list of items to be done.
 * Practice log: track individual practice/play events (tune, date, type of event — practice vs. session play, optional notes). Show a history of events on the tune detail page and allow filtering/summary by date range.
 * Broader Musician feature: replace the free-text "who" field on tunes with a reference to a musician, capture session-player relationships (a musician can be a teacher in one context and a fellow player in another). Foundation for this lands with Classes Phase 1; the tunes.who replacement and session-player tracking are deferred until after Classes ships.
 
+Already completed:
 Code improvements (from code-improver review):
 * Extract the shared `col()` CSV column-lookup helper into a single utility module (currently copy-pasted identically into routes/tunes.js, routes/sets.js, and routes/classes.js).
 * Wrap createSet/updateSet in transactions — tune insertions happen one-by-one with no rollback protection if the server crashes mid-way.
@@ -14,8 +15,6 @@ Code improvements (from code-improver review):
 * Move literal routes before :param routes in routes/tunes.js — defensive ordering to prevent future routing bugs (pattern already documented in routes/classes.js).
 * Rename the shadowing STATUS_CYCLE inside renderTuneDetail — a local variable shadows the module-level constant with a different shape (object vs. array).
 * Use crypto.randomInt instead of Math.random for sync code generation — one-line change, cryptographically secure.
-
-Already completed:
 * Classes feature: Class + Class Series + Musician entities, M:N tune↔class, set/tune filter by class, CSV import attaches classes to new and existing tunes. (design/Classes.md, 4-phase rollout, commits 6794347 → af6df8b.)
 * Per-instrument learning status: tunes track Memorized/Learning/Not Learned per instrument. Tune detail shows a per-instrument table with cycle-on-tap and add/remove. List card shows best-of summary with a small indicator when statuses differ. Filter combination "Memorized + Flute" means "memorized on Flute specifically". CSV import gained "Learned (Instrument)" columns; legacy single Learned column kept as a fallback. (design/PerInstrumentStatus.md, 6-phase rollout, commits afc711a → 7d2405d.)
 * Per-tune images: jpg, png, and PDF attachments. Bulk tarball upload matches files to tunes by Thesession ID embedded in the filename. Full-screen viewer with remove button.
