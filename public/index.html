@@ -559,7 +559,7 @@
         <div class="import-notes" style="margin-top:12px;">
           <strong>Bulk Image Import</strong>
           <br/><br/>
-          <p class="hint" style="margin-bottom:12px;">Upload a <code>.tar</code> or <code>.tar.gz</code> archive of JPG/PNG images. Each filename must include the Thesession ID of the tune it belongs to — e.g. <code>12345_the_morning_dew.jpg</code>.</p>
+          <p class="hint" style="margin-bottom:12px;">Upload a <code>.tar</code> or <code>.tar.gz</code> archive of JPG/PNG images. Each filename (without its extension) must match a tune name in your collection. Underscores and hyphens are treated as spaces and matching is case-insensitive — e.g. <code>The Morning Dew.jpg</code> or <code>the_morning_dew.png</code> both match a tune named "The Morning Dew". Unmatched files can be downloaded as a CSV.</p>
           <div class="import-area">
             <label class="file-drop-zone" id="image-tarball-drop-zone">
               <span id="image-tarball-file-label">Tap to choose a .tar or .tar.gz file</span>

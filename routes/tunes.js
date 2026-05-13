@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const { Readable } = require('stream');
+const { createHash } = require('crypto');
 const tar = require('tar');
 const { parse } = require('csv-parse/sync');
 const db = require('../db/database');
@@ -22,6 +23,7 @@ async function extractTarEntries(buffer) {
     const parser = new tar.Parser({ gzip: isGzip });
     parser.on('entry', entry => {
       if (entry.type !== 'File') { entry.resume(); return; }
+      if (path.basename(entry.path).startsWith('._')) { entry.resume(); return; }
       const ext = path.extname(entry.path).toLowerCase();
       const mimeType = (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg'
                      : ext === '.png' ? 'image/png'
@@ -342,14 +344,69 @@ router.post('/import', upload.single('csv'), async (req, res) => {
   }
 });
 
+function normalizeForNameMatch(s) {
+  // Normalize various Unicode apostrophe-like characters to ASCII apostrophe
+  return s.replace(/[‘’‛ʼʻ´＇`ˈ]/g, "'")
+    .toLowerCase()
+    .replace(/[_\-.]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Longest / multi-word entries first so 'slip jig' is tried before 'jig'
+const TUNE_TYPE_SUFFIXES = [
+  'slip jig', 'hop jig', '3/2 tune', '7/8 tune',
+  'strathspey', 'barndance', 'hornpipe', 'highland', 'shetland',
+  'gavotte', 'mazurka',
+  'fling', 'march', 'polka', 'ridee', 'slide', 'waltz',
+  'reel', 'rond',
+  'air', 'jig',
+];
+
+// Strips a leading "The/A/An" or a trailing ", The/A/An" (or both)
+function stripArticles(s) {
+  return s.replace(/^(the|a|an) /, '').replace(/, (the|a|an)$/, '').trim();
+}
+
+function stripTuneTypeSuffix(s) {
+  for (const type of TUNE_TYPE_SUFFIXES) {
+    if (s.endsWith(' ' + type)) {
+      const stripped = s.slice(0, -(type.length + 1)).trim();
+      return stripped.length ? stripped : null;
+    }
+  }
+  return null;
+}
+
+function findTuneMatch(nameMap, coreMap, normalizedBase) {
+  // 1. Exact normalized match
+  if (nameMap[normalizedBase]) return nameMap[normalizedBase];
+
+  // 2. Article-stripped filename vs article-stripped DB names
+  if (coreMap[stripArticles(normalizedBase)]) return coreMap[stripArticles(normalizedBase)];
+
+  // 3. Type suffix stripped, then same two lookups
+  const noType = stripTuneTypeSuffix(normalizedBase);
+  if (noType) {
+    if (nameMap[noType]) return nameMap[noType];
+    if (coreMap[stripArticles(noType)]) return coreMap[stripArticles(noType)];
+  }
+
+  return null;
+}
+
 router.post('/import-images', uploadTarball.single('tarball'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Tarball file required.' });
 
     const allTunes = await db.getTunesByUser(req.user.id);
-    const sidToTune = {};
+    const nameMap = {};
+    const coreMap = {};
     for (const tune of allTunes) {
-      if (tune.thesession_id) sidToTune[tune.thesession_id.trim()] = tune;
+      if (!tune.name) continue;
+      const norm = normalizeForNameMatch(tune.name);
+      nameMap[norm] = tune;
+      coreMap[stripArticles(norm)] = tune;
     }
 
     let files;
@@ -363,11 +420,14 @@ router.post('/import-images', uploadTarball.single('tarball'), async (req, res) 
     const unmatched = [];
 
     for (const { filename, buffer, mimeType } of files) {
-      const basename = path.basename(filename, path.extname(filename));
-      const digitRuns = basename.match(/\d+/g) || [];
-      const matchedTune = digitRuns.map(d => sidToTune[d]).find(Boolean);
-      if (!matchedTune) { unmatched.push(filename); continue; }
-      await db.addTuneImage(matchedTune.id, req.user.id, filename, mimeType, buffer);
+      const baseName = path.basename(filename, path.extname(filename));
+      const matchedTune = findTuneMatch(nameMap, coreMap, normalizeForNameMatch(baseName));
+      if (!matchedTune) {
+        unmatched.push({ filename, error: `No tune found matching "${baseName}"` });
+        continue;
+      }
+      const checksum = createHash('sha256').update(buffer).digest('hex');
+      await db.addTuneImage(matchedTune.id, req.user.id, filename, mimeType, buffer, checksum);
       imported++;
     }
 

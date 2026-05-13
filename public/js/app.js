@@ -3244,7 +3244,6 @@ function init() {
   const btnRunImageImport = document.getElementById('btn-run-image-import');
   const imageImportStatus = document.getElementById('image-import-status');
 
-  imageTarballZone.addEventListener('click', () => imageTarballInput.click());
   imageTarballInput.addEventListener('change', () => {
     const f = imageTarballInput.files[0];
     imageTarballLabel.textContent = f ? f.name : 'Tap to choose a .tar or .tar.gz file';
@@ -3262,12 +3261,26 @@ function init() {
     try {
       const result = await API.importImages(file);
       const n = result.imported;
-      let msg = `${n} image${n !== 1 ? 's' : ''} imported.`;
-      if (result.unmatched.length > 0) {
-        msg += ` ${result.unmatched.length} file${result.unmatched.length !== 1 ? 's' : ''} skipped — no matching Thesession ID found.`;
-      }
-      imageImportStatus.textContent = msg;
+      const u = result.unmatched.length;
+      imageImportStatus.textContent = '';
       imageImportStatus.className = n > 0 ? 'import-status success' : 'import-status error';
+      imageImportStatus.appendChild(document.createTextNode(
+        `${n} image${n !== 1 ? 's' : ''} imported.`
+      ));
+      if (u > 0) {
+        const csvRows = [['filename', 'error'],
+          ...result.unmatched.map(r => [r.filename, r.error])];
+        const csvText = csvRows.map(row =>
+          row.map(f => `"${f.replace(/"/g, '""')}"`).join(',')
+        ).join('\n');
+        const url = URL.createObjectURL(new Blob([csvText], { type: 'text/csv' }));
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'unmatched-images.csv';
+        a.textContent = ` ${u} unmatched — download CSV`;
+        a.addEventListener('click', () => setTimeout(() => URL.revokeObjectURL(url), 60000), { once: true });
+        imageImportStatus.appendChild(a);
+      }
       btnRunImageImport.disabled = false;
     } catch (err) {
       imageImportStatus.textContent = 'Import failed: ' + err.message;

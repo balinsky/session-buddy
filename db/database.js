@@ -83,6 +83,10 @@ async function init() {
   // Drop the unique constraint that prevented multiple attachments per tune
   await pool.query(`ALTER TABLE tune_images DROP CONSTRAINT IF EXISTS tune_images_tune_id_key`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_tune_images_tune_id ON tune_images(tune_id)`);
+  await pool.query(`ALTER TABLE tune_images ADD COLUMN IF NOT EXISTS checksum TEXT`);
+  // Partial unique index: prevents the same image being attached to a tune twice,
+  // while still allowing multiple distinct images per tune.
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tune_images_dedup ON tune_images(tune_id, user_id, checksum) WHERE checksum IS NOT NULL`);
   // Per-instrument learning status (design/PerInstrumentStatus.md). The
   // compound primary key covers tune_id-leading queries, so no separate FK
   // index is needed. As of Phase 6, this table is the sole source of truth
@@ -636,13 +640,15 @@ async function practiceSet(id, userId, date) {
   }
 }
 
-async function addTuneImage(tuneId, userId, filename, mimeType, data) {
+async function addTuneImage(tuneId, userId, filename, mimeType, data, checksum) {
   const { rows } = await pool.query(
-    `INSERT INTO tune_images (tune_id, user_id, filename, mime_type, data)
-     VALUES ($1, $2, $3, $4, $5) RETURNING id, filename, mime_type, created_at`,
-    [tuneId, userId, filename, mimeType, data]
+    `INSERT INTO tune_images (tune_id, user_id, filename, mime_type, data, checksum)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (tune_id, user_id, checksum) WHERE checksum IS NOT NULL DO NOTHING
+     RETURNING id, filename, mime_type, created_at`,
+    [tuneId, userId, filename, mimeType, data, checksum || null]
   );
-  return rows[0];
+  return rows[0] || null;
 }
 
 async function getTuneImageList(tuneId, userId) {
