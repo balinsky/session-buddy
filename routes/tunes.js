@@ -55,107 +55,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
-  try {
-    const tune = await db.getTuneById(req.params.id, req.user.id);
-    if (!tune) return res.status(404).json({ error: 'Tune not found.' });
-    res.json(tune);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/', async (req, res) => {
-  try {
-    if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
-    const dup = await db.findTuneDup(req.user.id, {
-      name: req.body.name,
-      type: req.body.type,
-      sid: req.body.thesession_id,
-    });
-    if (dup) {
-      return res.status(409).json({
-        error: `A tune with this ${dup.reason} already exists.`,
-        conflictingTuneId: dup.id,
-      });
-    }
-    const tune = await db.createTune(req.user.id, req.body);
-    // The form's instrument list and learning_status are no longer columns;
-    // pass them straight through to the per-instrument sync. Newly-checked
-    // instruments adopt learning_status as their starting status.
-    await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
-    if (Array.isArray(req.body.class_ids)) {
-      await db.syncTuneClasses(tune.id, req.user.id, req.body.class_ids);
-    }
-    res.status(201).json(tune);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.put('/:id', async (req, res) => {
-  try {
-    if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
-    const dup = await db.findTuneDup(req.user.id, {
-      name: req.body.name,
-      type: req.body.type,
-      sid: req.body.thesession_id,
-    }, parseInt(req.params.id));
-    if (dup) {
-      return res.status(409).json({
-        error: `A different tune with this ${dup.reason} already exists.`,
-        conflictingTuneId: dup.id,
-      });
-    }
-    const tune = await db.updateTune(req.params.id, req.user.id, req.body);
-    if (!tune) return res.status(404).json({ error: 'Tune not found.' });
-    await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
-    if (Array.isArray(req.body.class_ids)) {
-      await db.syncTuneClasses(tune.id, req.user.id, req.body.class_ids);
-    }
-    res.json(tune);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.patch('/:id', async (req, res) => {
-  try {
-    const existing = await db.getTuneById(req.params.id, req.user.id);
-    if (!existing) return res.status(404).json({ error: 'Tune not found.' });
-    const tune = await db.updateTune(req.params.id, req.user.id, { ...existing, ...req.body });
-    if (req.body.instrument !== undefined) {
-      await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
-    }
-    res.json(tune);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/:id/merge', async (req, res) => {
-  try {
-    const primaryId = Number(req.params.id);
-    const { mergeIds } = req.body;
-    if (!Array.isArray(mergeIds) || mergeIds.length === 0) {
-      return res.status(400).json({ error: 'mergeIds array is required.' });
-    }
-    const result = await db.mergeTunes(primaryId, mergeIds.map(Number), req.user.id);
-    if (!result) return res.status(404).json({ error: 'One or more tunes not found.' });
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.delete('/:id', async (req, res) => {
-  try {
-    await db.deleteTune(req.params.id, req.user.id);
-    res.status(204).send();
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// Literal-path POST routes declared before /:id so Express does not treat
+// "import" or "import-images" as an id parameter.
 
 router.post('/import', upload.single('csv'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'CSV file is required.' });
@@ -441,6 +342,143 @@ router.post('/import', upload.single('csv'), async (req, res) => {
   }
 });
 
+router.post('/import-images', uploadTarball.single('tarball'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Tarball file required.' });
+
+    const allTunes = await db.getTunesByUser(req.user.id);
+    const sidToTune = {};
+    for (const tune of allTunes) {
+      if (tune.thesession_id) sidToTune[tune.thesession_id.trim()] = tune;
+    }
+
+    let files;
+    try {
+      files = await extractTarEntries(req.file.buffer);
+    } catch (err) {
+      return res.status(400).json({ error: 'Could not parse archive: ' + err.message });
+    }
+
+    let imported = 0;
+    const unmatched = [];
+
+    for (const { filename, buffer, mimeType } of files) {
+      const basename = path.basename(filename, path.extname(filename));
+      const digitRuns = basename.match(/\d+/g) || [];
+      const matchedTune = digitRuns.map(d => sidToTune[d]).find(Boolean);
+      if (!matchedTune) { unmatched.push(filename); continue; }
+      await db.addTuneImage(matchedTune.id, req.user.id, filename, mimeType, buffer);
+      imported++;
+    }
+
+    res.json({ imported, unmatched });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:id', async (req, res) => {
+  try {
+    const tune = await db.getTuneById(req.params.id, req.user.id);
+    if (!tune) return res.status(404).json({ error: 'Tune not found.' });
+    res.json(tune);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/', async (req, res) => {
+  try {
+    if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
+    const dup = await db.findTuneDup(req.user.id, {
+      name: req.body.name,
+      type: req.body.type,
+      sid: req.body.thesession_id,
+    });
+    if (dup) {
+      return res.status(409).json({
+        error: `A tune with this ${dup.reason} already exists.`,
+        conflictingTuneId: dup.id,
+      });
+    }
+    const tune = await db.createTune(req.user.id, req.body);
+    // The form's instrument list and learning_status are no longer columns;
+    // pass them straight through to the per-instrument sync. Newly-checked
+    // instruments adopt learning_status as their starting status.
+    await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
+    if (Array.isArray(req.body.class_ids)) {
+      await db.syncTuneClasses(tune.id, req.user.id, req.body.class_ids);
+    }
+    res.status(201).json(tune);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/:id', async (req, res) => {
+  try {
+    if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
+    const dup = await db.findTuneDup(req.user.id, {
+      name: req.body.name,
+      type: req.body.type,
+      sid: req.body.thesession_id,
+    }, parseInt(req.params.id));
+    if (dup) {
+      return res.status(409).json({
+        error: `A different tune with this ${dup.reason} already exists.`,
+        conflictingTuneId: dup.id,
+      });
+    }
+    const tune = await db.updateTune(req.params.id, req.user.id, req.body);
+    if (!tune) return res.status(404).json({ error: 'Tune not found.' });
+    await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
+    if (Array.isArray(req.body.class_ids)) {
+      await db.syncTuneClasses(tune.id, req.user.id, req.body.class_ids);
+    }
+    res.json(tune);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/:id', async (req, res) => {
+  try {
+    const existing = await db.getTuneById(req.params.id, req.user.id);
+    if (!existing) return res.status(404).json({ error: 'Tune not found.' });
+    const tune = await db.updateTune(req.params.id, req.user.id, { ...existing, ...req.body });
+    if (req.body.instrument !== undefined) {
+      await db.syncTuneInstrumentRows(tune.id, req.user.id, req.body.instrument, req.body.learning_status);
+    }
+    res.json(tune);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/merge', async (req, res) => {
+  try {
+    const primaryId = Number(req.params.id);
+    const { mergeIds } = req.body;
+    if (!Array.isArray(mergeIds) || mergeIds.length === 0) {
+      return res.status(400).json({ error: 'mergeIds array is required.' });
+    }
+    const result = await db.mergeTunes(primaryId, mergeIds.map(Number), req.user.id);
+    if (!result) return res.status(404).json({ error: 'One or more tunes not found.' });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  try {
+    await db.deleteTune(req.params.id, req.user.id);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const VALID_STATUSES = ['Not Learned', 'Learning', 'Memorized'];
 
 // --- Per-instrument learning status (design/PerInstrumentStatus.md) ---
@@ -538,41 +576,6 @@ router.delete('/:id/image/:imageId', async (req, res) => {
   try {
     await db.deleteTuneImage(req.params.imageId, req.params.id, req.user.id);
     res.status(204).send();
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/import-images', uploadTarball.single('tarball'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'Tarball file required.' });
-
-    const allTunes = await db.getTunesByUser(req.user.id);
-    const sidToTune = {};
-    for (const tune of allTunes) {
-      if (tune.thesession_id) sidToTune[tune.thesession_id.trim()] = tune;
-    }
-
-    let files;
-    try {
-      files = await extractTarEntries(req.file.buffer);
-    } catch (err) {
-      return res.status(400).json({ error: 'Could not parse archive: ' + err.message });
-    }
-
-    let imported = 0;
-    const unmatched = [];
-
-    for (const { filename, buffer, mimeType } of files) {
-      const basename = path.basename(filename, path.extname(filename));
-      const digitRuns = basename.match(/\d+/g) || [];
-      const matchedTune = digitRuns.map(d => sidToTune[d]).find(Boolean);
-      if (!matchedTune) { unmatched.push(filename); continue; }
-      await db.addTuneImage(matchedTune.id, req.user.id, filename, mimeType, buffer);
-      imported++;
-    }
-
-    res.json({ imported, unmatched });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
