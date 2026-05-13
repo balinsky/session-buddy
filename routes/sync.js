@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { randomInt } = require('crypto');
 const db = require('../db/database');
 
 const ADJECTIVES = [
@@ -17,9 +18,9 @@ const NOUNS = [
 ];
 
 function generateSyncCode() {
-  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
-  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
-  const num = Math.floor(Math.random() * 90) + 10;
+  const adj = ADJECTIVES[randomInt(ADJECTIVES.length)];
+  const noun = NOUNS[randomInt(NOUNS.length)];
+  const num = randomInt(10, 100);
   return `${adj}-${noun}-${num}`;
 }
 
