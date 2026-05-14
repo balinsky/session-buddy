@@ -618,7 +618,10 @@
             </div>
             <div class="filter-section">
               <div class="filter-label">Learned From</div>
-              <input type="text" id="ff-who" class="filter-text-input" placeholder="Search..." />
+              <div class="typeahead-wrapper">
+                <input type="text" id="ff-who" class="filter-text-input" placeholder="Search musicians..." autocomplete="off" />
+                <div id="ff-who-suggestions" class="typeahead-suggestions hidden"></div>
+              </div>
             </div>
             <div class="filter-section">
               <div class="filter-label">Last Practiced</div>

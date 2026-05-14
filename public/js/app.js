@@ -83,6 +83,7 @@ const state = {
   duplicateGroups: [],
   // Filter modal scratch state — see renderFilterClassChips comment block.
   filterClasses: [],
+  filterMusicians: [],
   filterDraftClassIds: { ff: [], sf: [] },
   filterDraftClassSeriesIds: [],
 };
@@ -2922,6 +2923,34 @@ async function ensureFilterClassesLoaded() {
   }
 }
 
+async function ensureFilterMusiciansLoaded() {
+  try {
+    state.filterMusicians = await API.getMusicians();
+  } catch (e) {
+    state.filterMusicians = state.filterMusicians || [];
+  }
+}
+
+function renderFilterWhoSuggestions(query) {
+  const list = document.getElementById('ff-who-suggestions');
+  const q = (query || '').trim().toLowerCase();
+  if (!q) { list.classList.add('hidden'); return; }
+  const matches = (state.filterMusicians || [])
+    .filter(m => m.name.toLowerCase().includes(q))
+    .slice(0, 8);
+  if (matches.length === 0) { list.classList.add('hidden'); return; }
+  list.innerHTML = matches.map(m =>
+    `<div class="typeahead-item" data-name="${esc(m.name)}">${esc(m.name)}</div>`
+  ).join('');
+  list.classList.remove('hidden');
+  list.querySelectorAll('.typeahead-item').forEach(item => {
+    item.addEventListener('click', () => {
+      document.getElementById('ff-who').value = item.dataset.name;
+      list.classList.add('hidden');
+    });
+  });
+}
+
 // ===== TUNE FILTER MODAL =====
 
 async function openTuneFilter() {
@@ -2933,12 +2962,13 @@ async function openTuneFilter() {
   document.querySelectorAll('.ff-instrument').forEach(cb => { cb.checked = f.instruments.includes(cb.value); });
   document.getElementById('ff-where').value = f.where;
   document.getElementById('ff-who').value = f.who;
+  document.getElementById('ff-who-suggestions').classList.add('hidden');
   document.getElementById('ff-days').value = f.practicedDays != null ? f.practicedDays : '';
   document.getElementById('ff-class-input').value = '';
   document.getElementById('ff-class-suggestions').classList.add('hidden');
   state.filterDraftClassIds.ff = [...f.classIds];
   document.getElementById('modal-tune-filter').classList.remove('hidden');
-  await ensureFilterClassesLoaded();
+  await Promise.all([ensureFilterClassesLoaded(), ensureFilterMusiciansLoaded()]);
   renderFilterClassChips('ff');
 }
 
@@ -3341,6 +3371,9 @@ function init() {
   document.getElementById('btn-apply-tune-filter').addEventListener('click', applyTuneFilterFromModal);
   document.getElementById('btn-clear-tune-filter').addEventListener('click', clearTuneFilter);
   document.getElementById('modal-tune-filter').querySelector('.modal-backdrop').addEventListener('click', closeTuneFilter);
+  document.getElementById('ff-who').addEventListener('input', (e) => {
+    renderFilterWhoSuggestions(e.target.value);
+  });
   document.getElementById('ff-class-input').addEventListener('input', (e) => {
     renderFilterClassSuggestions('ff', e.target.value);
   });
