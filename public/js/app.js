@@ -70,6 +70,7 @@ const state = {
   setFilter: {
     favoriteOnly: false,
     types: [],
+    practicedDays: null,
     classIds: [],
   },
   classFilter: {
@@ -203,7 +204,7 @@ function isTuneFilterActive() {
 
 function isSetFilterActive() {
   const f = state.setFilter;
-  return f.favoriteOnly || f.types.length > 0 || f.classIds.length > 0;
+  return f.favoriteOnly || f.types.length > 0 || f.practicedDays !== null || f.classIds.length > 0;
 }
 
 function isClassFilterActive() {
@@ -293,6 +294,11 @@ function applySetFilter(sets) {
     if (f.types.length) {
       const setTypes = (s.tunes || []).map(t => t.type).filter(Boolean);
       if (!f.types.some(type => setTypes.includes(type))) return false;
+    }
+    if (f.practicedDays != null) {
+      if (!s.last_practiced_date) return false;
+      const daysAgo = (Date.now() - new Date(s.last_practiced_date).getTime()) / 86400000;
+      if (daysAgo > f.practicedDays) return false;
     }
     if (f.classIds.length) {
       // A set passes if ANY tune in it belongs to ANY of the selected classes.
@@ -3005,6 +3011,7 @@ async function openSetFilter() {
   const f = state.setFilter;
   document.getElementById('sf-fav-only').checked = f.favoriteOnly;
   document.querySelectorAll('.sf-type').forEach(cb => { cb.checked = f.types.includes(cb.value); });
+  document.getElementById('sf-days').value = f.practicedDays != null ? f.practicedDays : '';
   document.getElementById('sf-class-input').value = '';
   document.getElementById('sf-class-suggestions').classList.add('hidden');
   state.filterDraftClassIds.sf = [...f.classIds];
@@ -3021,6 +3028,7 @@ async function applySetFilterFromModal() {
   state.setFilter = {
     favoriteOnly: document.getElementById('sf-fav-only').checked,
     types: Array.from(document.querySelectorAll('.sf-type:checked')).map(cb => cb.value),
+    practicedDays: document.getElementById('sf-days').value ? Number(document.getElementById('sf-days').value) : null,
     classIds: [...(state.filterDraftClassIds.sf || [])],
   };
   closeSetFilter();
@@ -3029,7 +3037,7 @@ async function applySetFilterFromModal() {
 }
 
 async function clearSetFilter() {
-  state.setFilter = { favoriteOnly: false, types: [], classIds: [] };
+  state.setFilter = { favoriteOnly: false, types: [], practicedDays: null, classIds: [] };
   state.filterDraftClassIds.sf = [];
   closeSetFilter();
   state.sets = await API.getSets();
