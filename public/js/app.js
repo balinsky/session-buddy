@@ -409,12 +409,17 @@ function renderTuneList(tunes, searchQuery) {
 
   let filtered = tunes;
   if (query) {
+    // Strip whitespace for incipit fuzzy matching (query already lowercased)
+    const strippedQuery = query.replace(/\s+/g, '');
     filtered = filtered.filter(t =>
       t.name.toLowerCase().includes(query) ||
       (t.type || '').toLowerCase().includes(query) ||
       (t.key || '').toLowerCase().includes(query) ||
       (t.thesession_id || '').toLowerCase().includes(query) ||
-      (t.sequence_id || '').toLowerCase().includes(query)
+      (t.sequence_id || '').toLowerCase().includes(query) ||
+      (strippedQuery.length >= 2 && ['incipit_a', 'incipit_b', 'incipit_c'].some(f =>
+        (t[f] || '').replace(/\s+/g, '').toLowerCase().includes(strippedQuery)
+      ))
     );
   }
   filtered = applyTuneFilter(filtered);
