@@ -2528,6 +2528,12 @@ async function saveMusicianForm(e) {
     } else {
       musician = await API.createMusician(data);
     }
+    // Remove musician-form (and any preceding musician-detail) so Back from
+    // the detail page returns to wherever the user came from, not the form.
+    state.backStack = state.backStack.filter(v => v !== 'musician-form');
+    if (state.backStack[state.backStack.length - 1] === 'musician-detail') {
+      state.backStack.pop();
+    }
     await goToMusicianDetail(musician.id);
   } catch (err) {
     showError('Could not save musician: ' + err.message);
