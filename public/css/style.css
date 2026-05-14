@@ -453,6 +453,116 @@ html, body {
 
 .empty-list .empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
 
+/* ===== PRACTICE LOG ===== */
+.practice-log-form {
+  margin-bottom: 4px;
+}
+
+.practice-log-form-fields {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.practice-log-form-fields input[type="date"],
+.practice-log-form-fields select {
+  padding: 6px 8px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  background: var(--white);
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+}
+
+.practice-log-form-fields input[type="date"] { flex: 1.2; }
+.pl-form-type { flex: 1; }
+.pl-form-instrument { flex: 1.5; }
+
+.practice-log-notes-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.practice-log-notes-row input[type="text"] {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  background: var(--white);
+  color: var(--text);
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
+}
+
+.practice-log-history {
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+  padding-top: 4px;
+}
+
+.practice-log-entry {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.practice-log-entry:last-child { border-bottom: none; }
+
+.pl-date {
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+.pl-type {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pl-type--practice { background: var(--status-learning-bg); color: var(--status-learning-text); }
+.pl-type--session  { background: var(--status-memorized-bg); color: var(--status-memorized-text); }
+.pl-type--class    { background: var(--gold-light); color: var(--gold); }
+
+.pl-instrument {
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.pl-notes {
+  color: var(--text-muted);
+  font-style: italic;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pl-delete {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 2px 7px !important;
+  font-size: 0.8rem !important;
+  line-height: 1.4;
+}
+
 /* ===== TUNE DETAIL ===== */
 .detail-header {
   margin-bottom: 16px;

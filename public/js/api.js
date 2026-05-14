@@ -72,6 +72,11 @@ const API = (() => {
       return request('POST', '/api/tunes/import-images', form, true);
     },
 
+    // Practice log
+    getPracticeLog: (id) => request('GET', `/api/tunes/${id}/practice-log`),
+    addPracticeLogEntry: (id, data) => request('POST', `/api/tunes/${id}/practice-log`, data),
+    deletePracticeLogEntry: (tuneId, eventId) => request('DELETE', `/api/tunes/${tuneId}/practice-log/${eventId}`),
+
     // Per-instrument learning status
     getTuneInstrumentStatuses: (id) => request('GET', `/api/tunes/${id}/instruments`),
     setTuneInstrumentStatus: (id, instrument, status) =>

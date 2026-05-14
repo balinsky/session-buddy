@@ -641,4 +641,43 @@ router.delete('/:id/image/:imageId', async (req, res) => {
   }
 });
 
+// --- Practice log ---
+
+const VALID_EVENT_TYPES = ['practice', 'session', 'class'];
+
+router.get('/:id/practice-log', async (req, res) => {
+  try {
+    const tune = await db.getTuneById(req.params.id, req.user.id);
+    if (!tune) return res.status(404).json({ error: 'Tune not found.' });
+    res.json(await db.getPracticeLog(req.params.id, req.user.id));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/practice-log', async (req, res) => {
+  try {
+    const { date, event_type, instrument, notes } = req.body;
+    if (!date) return res.status(400).json({ error: 'date is required.' });
+    if (!VALID_EVENT_TYPES.includes(event_type)) {
+      return res.status(400).json({ error: `event_type must be one of: ${VALID_EVENT_TYPES.join(', ')}.` });
+    }
+    if (!instrument) return res.status(400).json({ error: 'instrument is required.' });
+    const entry = await db.addPracticeLogEntry(req.params.id, req.user.id, { date, event_type, instrument, notes });
+    if (!entry) return res.status(404).json({ error: 'Tune not found.' });
+    res.status(201).json(entry);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/practice-log/:eventId', async (req, res) => {
+  try {
+    await db.deletePracticeLogEntry(req.params.eventId, req.params.id, req.user.id);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

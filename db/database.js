@@ -166,6 +166,21 @@ async function init() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_musician_user_id ON musician(user_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_class_tunes_tune_id ON class_tunes(tune_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_class_instructors_musician_id ON class_instructors(musician_id)`);
+
+  // Practice log: one row per practice/session/class event on a tune.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS practice_log (
+      id SERIAL PRIMARY KEY,
+      tune_id INTEGER NOT NULL REFERENCES tunes(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      event_type TEXT NOT NULL DEFAULT 'practice',
+      instrument TEXT NOT NULL,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_practice_log_tune_id ON practice_log(tune_id, user_id)`);
 }
 
 // --- Users ---
@@ -1172,6 +1187,76 @@ async function deleteMusician(id, userId) {
   await pool.query('DELETE FROM musician WHERE id = $1 AND user_id = $2', [id, userId]);
 }
 
+// --- Practice Log ---
+
+async function getPracticeLog(tuneId, userId) {
+  const { rows } = await pool.query(
+    `SELECT pl.* FROM practice_log pl
+     JOIN tunes t ON t.id = pl.tune_id
+     WHERE pl.tune_id = $1 AND t.user_id = $2
+     ORDER BY pl.date DESC, pl.created_at DESC`,
+    [tuneId, userId]
+  );
+  return rows;
+}
+
+async function addPracticeLogEntry(tuneId, userId, { date, event_type, instrument, notes }) {
+  const { rowCount } = await pool.query(
+    'SELECT 1 FROM tunes WHERE id = $1 AND user_id = $2',
+    [tuneId, userId]
+  );
+  if (rowCount === 0) return null;
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows } = await client.query(
+      `INSERT INTO practice_log (tune_id, user_id, date, event_type, instrument, notes)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [tuneId, userId, date, event_type, instrument, notes || null]
+    );
+    const entry = rows[0];
+
+    // Keep last_practiced_date current (advance only if this entry's date is newer).
+    await client.query(
+      `UPDATE tunes SET last_practiced_date = $1
+       WHERE id = $2 AND user_id = $3
+         AND (last_practiced_date IS NULL OR last_practiced_date < $1)`,
+      [date, tuneId, userId]
+    );
+
+    // Practice events: bump Not Learned → Learning for the played instrument.
+    if (event_type === 'practice') {
+      await client.query(
+        `INSERT INTO tune_instrument_status (tune_id, instrument, status)
+         VALUES ($1, $2, 'Learning')
+         ON CONFLICT (tune_id, instrument)
+         DO UPDATE SET status = 'Learning'
+         WHERE tune_instrument_status.status = 'Not Learned'`,
+        [tuneId, instrument]
+      );
+    }
+
+    await client.query('COMMIT');
+    return entry;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function deletePracticeLogEntry(id, tuneId, userId) {
+  await pool.query(
+    `DELETE FROM practice_log
+     WHERE id = $1 AND tune_id = $2
+       AND tune_id IN (SELECT id FROM tunes WHERE user_id = $3)`,
+    [id, tuneId, userId]
+  );
+}
+
 module.exports = {
   init,
   getUserBySyncCode, createUser,
@@ -1187,4 +1272,5 @@ module.exports = {
   getClassesByUser, getClassById, createClass, updateClass, deleteClass,
   getClassSeriesByUser, getClassSeriesById, createClassSeries, updateClassSeries, deleteClassSeries,
   getMusiciansByUser, getMusicianById, createMusician, updateMusician, deleteMusician,
+  getPracticeLog, addPracticeLogEntry, deletePracticeLogEntry,
 };

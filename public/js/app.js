@@ -561,18 +561,18 @@ async function goToTuneDetail(tuneId) {
   document.getElementById('header-title').textContent = 'Tune Detail';
 
   try {
-    const [tune, allSets, images, instrumentStatuses] = await Promise.all([
+    const [tune, allSets, images, instrumentStatuses, practiceLog] = await Promise.all([
       API.getTune(tuneId), API.getSets(), API.getTuneImages(tuneId),
-      API.getTuneInstrumentStatuses(tuneId),
+      API.getTuneInstrumentStatuses(tuneId), API.getPracticeLog(tuneId),
     ]);
     const tuneSets = allSets.filter(s => s.tunes.some(t => t.id === tuneId));
-    renderTuneDetail(tune, tuneSets, images, instrumentStatuses);
+    renderTuneDetail(tune, tuneSets, images, instrumentStatuses, practiceLog);
   } catch (e) {
     showError('Could not load tune: ' + e.message);
   }
 }
 
-function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses = []) {
+function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses = [], practiceLog = []) {
   const sessionUrl = buildSessionUrl(tune.thesession_id, tune.setting);
   const trackedInstruments = new Set(instrumentStatuses.map(s => s.instrument));
   const unusedInstruments = INSTRUMENTS.filter(i => !trackedInstruments.has(i));
@@ -689,15 +689,40 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
     html += `</div>`;
   }
 
-  // Last Practiced — always shown with a Today button
+  // Practice log — inline log form + history list
+  const today = new Date().toISOString().split('T')[0];
   html += `
     <div class="detail-card">
-      <div class="detail-card-title">Practice</div>
-      <div class="detail-field">
-        <span class="detail-field-label">Last Practiced</span>
-        <span class="detail-field-value" id="last-practiced-value">${esc(tune.last_practiced_date) || '<em>Not recorded</em>'}</span>
-        <button class="btn btn-small btn-primary" id="btn-today">Today</button>
-      </div>
+      <div class="detail-card-title">Practice Log</div>
+      <form id="practice-log-form" class="practice-log-form">
+        <div class="practice-log-form-fields">
+          <input type="date" id="pl-date" value="${today}" required />
+          <select id="pl-type" class="pl-form-type">
+            <option value="practice">Practice</option>
+            <option value="session">Session</option>
+            <option value="class">Class</option>
+          </select>
+          <select id="pl-instrument" class="pl-form-instrument">
+            <option value="">Instrument…</option>
+            ${INSTRUMENTS.map(i => `<option value="${esc(i)}">${esc(i)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="practice-log-notes-row">
+          <input type="text" id="pl-notes" placeholder="Notes (optional)" />
+          <button type="submit" class="btn btn-primary btn-small">Log</button>
+        </div>
+      </form>
+      ${practiceLog.length > 0
+        ? `<div class="practice-log-history">${practiceLog.map(entry => `
+            <div class="practice-log-entry">
+              <span class="pl-date">${esc(entry.date)}</span>
+              <span class="pl-type pl-type--${esc(entry.event_type)}">${entry.event_type.charAt(0).toUpperCase() + entry.event_type.slice(1)}</span>
+              <span class="pl-instrument">${esc(entry.instrument)}</span>
+              ${entry.notes ? `<span class="pl-notes">${esc(entry.notes)}</span>` : ''}
+              <button class="pl-delete btn btn-danger btn-small" data-entry-id="${entry.id}">&times;</button>
+            </div>`).join('')}
+          </div>`
+        : `<div class="hint" style="padding-top:8px">No events logged yet.</div>`}
     </div>`;
 
   // Classes (Phase 2e of design/Classes.md). Each entry links to its
@@ -778,16 +803,19 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
   // Per-instrument status table — tap badge to cycle, × to remove, picker to add.
   const INSTRUMENT_STATUS_NEXT = { 'Not Learned': 'Learning', 'Learning': 'Memorized', 'Memorized': 'Not Learned' };
 
-  async function refreshInstrumentTable() {
+  async function refreshDetail() {
     try {
-      const statuses = await API.getTuneInstrumentStatuses(tune.id);
-      const refreshed = await API.getTune(tune.id);
+      const [statuses, refreshed, newLog] = await Promise.all([
+        API.getTuneInstrumentStatuses(tune.id),
+        API.getTune(tune.id),
+        API.getPracticeLog(tune.id),
+      ]);
       // Keep state.tunes in sync so the list view reflects the recomputed legacy status.
       const idx = state.tunes.findIndex(t => t.id === refreshed.id);
       if (idx !== -1) state.tunes[idx] = refreshed;
-      renderTuneDetail(refreshed, tuneSets, images, statuses);
+      renderTuneDetail(refreshed, tuneSets, images, statuses, newLog);
     } catch (err) {
-      showError('Could not reload instrument statuses: ' + err.message);
+      showError('Could not reload tune detail: ' + err.message);
     }
   }
 
@@ -803,11 +831,11 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
         if (cycle) {
           const next = INSTRUMENT_STATUS_NEXT[cycle.dataset.status] || 'Not Learned';
           await API.setTuneInstrumentStatus(tune.id, instrument, next);
-          await refreshInstrumentTable();
+          await refreshDetail();
         } else if (remove) {
           if (!confirm(`Remove ${instrument} from this tune?`)) return;
           await API.deleteTuneInstrumentStatus(tune.id, instrument);
-          await refreshInstrumentTable();
+          await refreshDetail();
         }
       } catch (err) {
         showError('Could not update instrument status: ' + err.message);
@@ -821,7 +849,7 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
         if (!instrument) return;
         try {
           await API.setTuneInstrumentStatus(tune.id, instrument, 'Not Learned');
-          await refreshInstrumentTable();
+          await refreshDetail();
         } catch (err) {
           showError('Could not add instrument: ' + err.message);
         }
@@ -829,17 +857,31 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
     }
   }
 
-  document.getElementById('btn-today').addEventListener('click', async () => {
-    const today = new Date().toISOString().split('T')[0];
+  document.getElementById('practice-log-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const date = document.getElementById('pl-date').value;
+    const event_type = document.getElementById('pl-type').value;
+    const instrument = document.getElementById('pl-instrument').value;
+    const notes = document.getElementById('pl-notes').value.trim();
+    if (!instrument) { showError('Please select an instrument.'); return; }
     try {
-      const updated = await API.updateTune(tune.id, { ...tune, last_practiced_date: today });
-      document.getElementById('last-practiced-value').textContent = today;
-      tune.last_practiced_date = today;
-      const idx = state.tunes.findIndex(t => t.id === updated.id);
-      if (idx !== -1) state.tunes[idx] = updated;
-    } catch (e) {
-      showError('Could not update: ' + e.message);
+      await API.addPracticeLogEntry(tune.id, { date, event_type, instrument, notes });
+      await refreshDetail();
+    } catch (err) {
+      showError('Could not log event: ' + err.message);
     }
+  });
+
+  document.getElementById('tune-detail-content').querySelectorAll('.pl-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this log entry?')) return;
+      try {
+        await API.deletePracticeLogEntry(tune.id, Number(btn.dataset.entryId));
+        await refreshDetail();
+      } catch (err) {
+        showError('Could not delete log entry: ' + err.message);
+      }
+    });
   });
 
   // Scope to elements that actually carry data-set-id — this class is reused
