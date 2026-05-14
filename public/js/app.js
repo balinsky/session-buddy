@@ -49,6 +49,9 @@ const state = {
   classes: [],
   editingTune: null,
   editingSet: null,
+  tuneFormWhoMusicianId: null,
+  tuneFormWhoText: '',
+  tuneFormAllMusicians: [],
   selectedTuneIds: [],
   backStack: [],
   tuneSearch: '',
@@ -263,7 +266,12 @@ function applyTuneFilter(tunes) {
     if (f.types.length && !f.types.includes(t.type)) return false;
     if (f.key && !(t.key || '').toLowerCase().includes(f.key.toLowerCase())) return false;
     if (f.where && !(t.where_learned || '').toLowerCase().includes(f.where.toLowerCase())) return false;
-    if (f.who && !(t.who || '').toLowerCase().includes(f.who.toLowerCase())) return false;
+    if (f.who) {
+      const q = f.who.toLowerCase();
+      const matchesText = (t.who || '').toLowerCase().includes(q);
+      const matchesMusician = (t.who_musician_name || '').toLowerCase().includes(q);
+      if (!matchesText && !matchesMusician) return false;
+    }
     if (f.practicedDays != null) {
       if (!t.last_practiced_date) return false;
       const daysAgo = (Date.now() - new Date(t.last_practiced_date).getTime()) / 86400000;
@@ -738,7 +746,11 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
 
   // Hidden fields
   const hiddenFields = [];
-  if (tune.who) hiddenFields.push(['Learned from', esc(tune.who)]);
+  if (tune.who_musician) {
+    hiddenFields.push(['Learned from', `<span class="chip tappable" data-musician-id="${tune.who_musician.id}">${esc(tune.who_musician.name)} &#8599;</span>`]);
+  } else if (tune.who) {
+    hiddenFields.push(['Learned from', `${esc(tune.who)}<span class="who-link-actions"> <button class="btn btn-outline btn-small" id="btn-who-link">Link</button> <button class="btn btn-outline btn-small" id="btn-who-create">Create</button></span>`]);
+  }
   if (tune.where_learned) hiddenFields.push(['Where', esc(tune.where_learned)]);
   if (tune.date_learned) hiddenFields.push(['Date Learned', esc(tune.date_learned)]);
   if (tune.added_date) hiddenFields.push(['Date Added', esc(tune.added_date)]);
@@ -796,6 +808,55 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
   container.querySelectorAll('[data-tune-class-id]').forEach(link => {
     link.addEventListener('click', () => goToClassDetail(Number(link.dataset.tuneClassId)));
   });
+
+  // Learned from: linked musician chip → musician detail.
+  container.querySelectorAll('[data-musician-id]').forEach(chip => {
+    chip.addEventListener('click', () => goToMusicianDetail(Number(chip.dataset.musicianId)));
+  });
+
+  // Learned from: unmatched who text — inline "Link" picker and direct "Create".
+  const whoLinkBtn = document.getElementById('btn-who-link');
+  const whoCreateBtn = document.getElementById('btn-who-create');
+  if (whoLinkBtn) {
+    whoLinkBtn.addEventListener('click', async () => {
+      let allMusicians;
+      try { allMusicians = await API.getMusicians(); } catch (e) { showError('Could not load musicians.'); return; }
+      const whoValueEl = whoLinkBtn.closest('.detail-field-value');
+      whoValueEl.innerHTML = `
+        <span>${esc(tune.who)}</span>
+        <div class="typeahead-wrapper" style="margin-top:6px;">
+          <input id="who-inline-input" type="text" placeholder="Search musician…" style="width:100%;padding:6px 8px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:0.9rem;font-family:inherit" />
+          <div id="who-inline-suggestions" class="typeahead-suggestions hidden"></div>
+        </div>`;
+      const inp = document.getElementById('who-inline-input');
+      const sug = document.getElementById('who-inline-suggestions');
+      inp.addEventListener('input', () => {
+        const q = inp.value.trim().toLowerCase();
+        if (!q) { sug.classList.add('hidden'); return; }
+        const hits = allMusicians.filter(m => m.name.toLowerCase().includes(q)).slice(0, 8);
+        sug.innerHTML = hits.map(m => `<div class="typeahead-item" data-id="${m.id}">${esc(m.name)}</div>`).join('');
+        sug.classList.toggle('hidden', !hits.length);
+        sug.querySelectorAll('.typeahead-item').forEach(item => {
+          item.addEventListener('click', async () => {
+            try {
+              await API.patchTune(tune.id, { who_musician_id: Number(item.dataset.id) });
+              await refreshDetail();
+            } catch (err) { showError('Could not link musician: ' + err.message); }
+          });
+        });
+      });
+      inp.focus();
+    });
+  }
+  if (whoCreateBtn) {
+    whoCreateBtn.addEventListener('click', async () => {
+      try {
+        const musician = await API.createMusician({ name: tune.who });
+        await API.patchTune(tune.id, { who_musician_id: musician.id });
+        await refreshDetail();
+      } catch (err) { showError('Could not create musician: ' + err.message); }
+    });
+  }
   document.getElementById('btn-add-to-set').addEventListener('click', () => goToSetForm(null, tune.id));
   document.getElementById('btn-edit-tune').addEventListener('click', () => goToTuneForm(tune));
   document.getElementById('btn-delete-tune').addEventListener('click', () => deleteTune(tune));
@@ -990,6 +1051,9 @@ async function goToTuneForm(tune = null) {
   state.editingTune = tune;
   state.tuneFormClassIds = tune && tune.classes ? tune.classes.map(c => c.id) : [];
   state.tuneFormAllClasses = [];
+  state.tuneFormWhoMusicianId = tune ? (tune.who_musician_id || null) : null;
+  state.tuneFormWhoText = tune ? (tune.who || '') : '';
+  state.tuneFormAllMusicians = [];
   showView('tune-form');
   document.getElementById('header-title').textContent = tune ? 'Edit Tune' : 'Add Tune';
   document.getElementById('tune-form-title').textContent = tune ? 'Edit Tune' : 'Add Tune';
@@ -1013,7 +1077,6 @@ async function goToTuneForm(tune = null) {
     form.elements['incipit_c'].value = tune.incipit_c || '';
     form.elements['thesession_id'].value = tune.thesession_id || '';
     form.elements['setting'].value = tune.setting || '';
-    form.elements['who'].value = tune.who || '';
     form.elements['where_learned'].value = tune.where_learned || '';
     form.elements['tunebooks'].value = tune.tunebooks || '';
     form.elements['mnemonic'].value = tune.mnemonic || '';
@@ -1037,16 +1100,21 @@ async function goToTuneForm(tune = null) {
     });
   }
 
-  // Classes typeahead — load the user's classes (cached on each form open).
+  // Load classes and musicians for the pickers on this form.
   document.getElementById('f-class-input').value = '';
   hideTuneFormClassSuggestions();
+  hideTuneFormWhoSuggestions();
   try {
-    state.tuneFormAllClasses = await API.getClasses();
+    const [classes, musicians] = await Promise.all([API.getClasses(), API.getMusicians()]);
+    state.tuneFormAllClasses = classes;
+    state.tuneFormAllMusicians = musicians;
   } catch (e) {
-    showError('Could not load classes for picker: ' + e.message);
+    showError('Could not load form data: ' + e.message);
     state.tuneFormAllClasses = [];
+    state.tuneFormAllMusicians = [];
   }
   renderTuneFormClassChips();
+  renderTuneFormWhoField();
 }
 
 function renderTuneFormClassChips() {
@@ -1108,6 +1176,71 @@ function hideTuneFormClassSuggestions() {
   document.getElementById('f-class-suggestions').classList.add('hidden');
 }
 
+// Who (musician) picker for the tune form — single-select, typeahead + quick-create.
+
+function renderTuneFormWhoField() {
+  const chipArea = document.getElementById('f-who-chip');
+  const wrapper = document.querySelector('#f-who-input')?.parentElement;
+  const input = document.getElementById('f-who-input');
+  if (!chipArea) return;
+
+  if (state.tuneFormWhoMusicianId) {
+    const m = state.tuneFormAllMusicians.find(x => x.id === state.tuneFormWhoMusicianId);
+    const name = m ? m.name : `Musician #${state.tuneFormWhoMusicianId}`;
+    chipArea.innerHTML = `<span class="chip removable"><span class="chip-name">${esc(name)}</span><button type="button" class="chip-remove" aria-label="Remove">&times;</button></span>`;
+    chipArea.querySelector('.chip-remove').addEventListener('click', () => {
+      state.tuneFormWhoMusicianId = null;
+      renderTuneFormWhoField();
+    });
+    if (wrapper) wrapper.style.display = 'none';
+  } else {
+    chipArea.innerHTML = state.tuneFormWhoText
+      ? `<span class="hint" style="font-size:0.8rem">Currently: "${esc(state.tuneFormWhoText)}"</span>`
+      : '';
+    if (wrapper) wrapper.style.display = '';
+    if (input) input.value = '';
+  }
+}
+
+function renderTuneFormWhoSuggestions(query) {
+  const list = document.getElementById('f-who-suggestions');
+  const q = query.trim().toLowerCase();
+  if (!q) { hideTuneFormWhoSuggestions(); return; }
+  const matches = state.tuneFormAllMusicians.filter(m => m.name.toLowerCase().includes(q)).slice(0, 8);
+  const hasExact = state.tuneFormAllMusicians.some(m => m.name.toLowerCase() === q);
+  let html = matches.map(m => `<div class="typeahead-item" data-id="${m.id}">${esc(m.name)}</div>`).join('');
+  if (!hasExact) {
+    html += `<div class="typeahead-item typeahead-create" data-create="${esc(query.trim())}">+ Add new musician "${esc(query.trim())}"</div>`;
+  }
+  list.innerHTML = html;
+  list.classList.remove('hidden');
+  list.querySelectorAll('.typeahead-item').forEach(item => {
+    item.addEventListener('click', () => onTuneFormWhoSuggestionPicked(item));
+  });
+}
+
+function hideTuneFormWhoSuggestions() {
+  const el = document.getElementById('f-who-suggestions');
+  if (el) el.classList.add('hidden');
+}
+
+async function onTuneFormWhoSuggestionPicked(item) {
+  if (item.dataset.id) {
+    state.tuneFormWhoMusicianId = Number(item.dataset.id);
+  } else if (item.dataset.create) {
+    try {
+      const created = await API.createMusician({ name: item.dataset.create });
+      state.tuneFormAllMusicians.push(created);
+      state.tuneFormWhoMusicianId = created.id;
+    } catch (e) {
+      showError('Could not create musician: ' + e.message);
+      return;
+    }
+  }
+  hideTuneFormWhoSuggestions();
+  renderTuneFormWhoField();
+}
+
 async function saveTuneForm(e) {
   e.preventDefault();
   const form = document.getElementById('tune-form');
@@ -1123,7 +1256,8 @@ async function saveTuneForm(e) {
     incipit_c: form.elements['incipit_c'].value.trim(),
     thesession_id: form.elements['thesession_id'].value.trim(),
     setting: form.elements['setting'].value.trim(),
-    who: form.elements['who'].value.trim(),
+    who: state.tuneFormWhoMusicianId ? null : state.tuneFormWhoText,
+    who_musician_id: state.tuneFormWhoMusicianId,
     where_learned: form.elements['where_learned'].value.trim(),
     tunebooks: form.elements['tunebooks'].value.trim(),
     mnemonic: form.elements['mnemonic'].value.trim(),
@@ -2249,6 +2383,7 @@ function renderMusicianDetail(musician) {
     <div class="detail-header">
       <div class="detail-title-row">
         <div class="detail-title">${esc(musician.name)}</div>
+        ${musician.is_session_player ? `<span class="status-badge status-memorized" style="font-size:0.75rem;padding:3px 8px;margin-left:8px;">Session player</span>` : ''}
       </div>
       <div class="detail-actions">
         <button class="btn btn-outline btn-small" id="btn-edit-musician">Edit</button>
@@ -2275,9 +2410,23 @@ function renderMusicianDetail(musician) {
   }
   html += `</div>`;
 
+  html += `<div class="detail-card"><div class="detail-card-title">Tunes learned from</div>`;
+  if (!musician.tunes_learned_from || musician.tunes_learned_from.length === 0) {
+    html += `<div class="hint">No tunes linked yet.</div>`;
+  } else {
+    musician.tunes_learned_from.forEach(t => {
+      const meta = t.type || '';
+      html += `<div class="detail-field"><span class="detail-field-value tune-in-set-link" data-tune-id="${t.id}">${esc(t.name)}${meta ? ` <span class="hint">— ${esc(meta)}</span>` : ''} &#8599;</span></div>`;
+    });
+  }
+  html += `</div>`;
+
   container.innerHTML = html;
   container.querySelectorAll('[data-class-id]').forEach(link => {
     link.addEventListener('click', () => goToClassDetail(Number(link.dataset.classId)));
+  });
+  container.querySelectorAll('[data-tune-id]').forEach(link => {
+    link.addEventListener('click', () => goToTuneDetail(Number(link.dataset.tuneId)));
   });
   document.getElementById('btn-edit-musician').addEventListener('click', () => goToMusicianForm(musician));
   document.getElementById('btn-delete-musician').addEventListener('click', () => deleteMusicianFromDetail(musician));
@@ -2313,6 +2462,7 @@ function goToMusicianForm(musician = null) {
   form.elements['name'].value = musician ? musician.name : '';
   form.elements['website'].value = musician ? (musician.website || '') : '';
   form.elements['notes'].value = musician ? (musician.notes || '') : '';
+  document.getElementById('mf-session-player').checked = !!(musician && musician.is_session_player);
 
   const saved = new Set(((musician && musician.instruments) || '')
     .split(',').map(s => s.trim()).filter(Boolean));
@@ -2334,6 +2484,7 @@ async function saveMusicianForm(e) {
     instruments: instruments || null,
     website: form.elements['website'].value.trim() || null,
     notes: form.elements['notes'].value.trim() || null,
+    is_session_player: document.getElementById('mf-session-player').checked,
   };
   try {
     let musician;
@@ -3154,6 +3305,21 @@ function init() {
   });
   document.getElementById('f-class-input').addEventListener('blur', () => {
     setTimeout(hideTuneFormClassSuggestions, 150);
+  });
+
+  // Tune form: "Learned from" musician typeahead.
+  document.getElementById('f-who-input').addEventListener('input', (e) => {
+    renderTuneFormWhoSuggestions(e.target.value);
+  });
+  document.getElementById('f-who-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const first = document.querySelector('#f-who-suggestions .typeahead-item');
+      if (first) onTuneFormWhoSuggestionPicked(first);
+    }
+  });
+  document.getElementById('f-who-input').addEventListener('blur', () => {
+    setTimeout(hideTuneFormWhoSuggestions, 150);
   });
 
   // Live ABC preview in tune form

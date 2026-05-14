@@ -167,6 +167,19 @@ async function init() {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_class_tunes_tune_id ON class_tunes(tune_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_class_instructors_musician_id ON class_instructors(musician_id)`);
 
+  // Broader Musician feature: link tunes.who to a musician entity.
+  await pool.query(`ALTER TABLE tunes ADD COLUMN IF NOT EXISTS who_musician_id INTEGER REFERENCES musician(id) ON DELETE SET NULL`);
+  await pool.query(`ALTER TABLE musician ADD COLUMN IF NOT EXISTS is_session_player BOOLEAN DEFAULT false`);
+  // Auto-match: tunes whose who text exactly matches a musician name (case-insensitive). Idempotent.
+  await pool.query(`
+    UPDATE tunes t SET who_musician_id = m.id
+    FROM musician m
+    WHERE t.user_id = m.user_id
+      AND t.who_musician_id IS NULL
+      AND t.who IS NOT NULL AND t.who != ''
+      AND LOWER(TRIM(t.who)) = LOWER(TRIM(m.name))
+  `);
+
   // Practice log: one row per practice/session/class event on a tune.
   await pool.query(`
     CREATE TABLE IF NOT EXISTS practice_log (
@@ -201,7 +214,13 @@ async function createUser(syncCode) {
 // --- Tunes ---
 
 async function getTunesByUser(userId) {
-  const { rows: tunes } = await pool.query('SELECT * FROM tunes WHERE user_id = $1', [userId]);
+  const { rows: tunes } = await pool.query(
+    `SELECT t.*, m.name AS who_musician_name
+     FROM tunes t
+     LEFT JOIN musician m ON m.id = t.who_musician_id
+     WHERE t.user_id = $1`,
+    [userId]
+  );
   if (tunes.length === 0) return tunes;
   // Attach per-instrument statuses so the list view can compute best-of and
   // detect multi-instrument tunes (design/PerInstrumentStatus.md, Phase 3).
@@ -244,6 +263,16 @@ async function getTuneById(id, userId) {
     [id, userId]
   );
   if (!rows[0]) return null;
+  // Attach the who_musician object when the tune has a linked musician.
+  if (rows[0].who_musician_id) {
+    const { rows: mRows } = await pool.query(
+      'SELECT * FROM musician WHERE id = $1',
+      [rows[0].who_musician_id]
+    );
+    rows[0].who_musician = mRows[0] || null;
+  } else {
+    rows[0].who_musician = null;
+  }
   // Attach the classes this tune belongs to (Phase 2e of design/Classes.md).
   // Includes the parent series' name so the tune detail can show context
   // like "OAIM Spring 2025 Whistle — Class 3" without a second round-trip.
@@ -391,6 +420,7 @@ function tuneParams(userId, data) {
     data.composer || null,
     data.last_practiced_date || null,
     data.sequence_id || null,
+    data.who_musician_id || null,
   ];
 }
 
@@ -402,9 +432,9 @@ async function createTune(userId, data) {
       count, added_date, where_learned, who,
       mnemonic, tunebooks, date_learned, favorite,
       thesession_id, setting, notes, composer, last_practiced_date,
-      sequence_id
+      sequence_id, who_musician_id
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
     ) RETURNING *`,
     tuneParams(userId, data)
   );
@@ -421,8 +451,8 @@ async function updateTune(id, userId, data) {
       where_learned=$10, who=$11, mnemonic=$12, tunebooks=$13,
       date_learned=$14, favorite=$15, thesession_id=$16,
       setting=$17, notes=$18, composer=$19, last_practiced_date=$20,
-      sequence_id=$21
-    WHERE id=$22 AND user_id=$23
+      sequence_id=$21, who_musician_id=$22
+    WHERE id=$23 AND user_id=$24
     RETURNING *`,
     params
   );
@@ -446,9 +476,9 @@ async function insertManyTunes(userId, tunes) {
           count, added_date, where_learned, who,
           mnemonic, tunebooks, date_learned, favorite,
           thesession_id, setting, notes, composer, last_practiced_date,
-          sequence_id
+          sequence_id, who_musician_id
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
         ) RETURNING *`,
         tuneParams(userId, tune)
       );
@@ -1161,24 +1191,33 @@ async function getMusicianById(id, userId) {
     [id, userId]
   );
   rows[0].classes = classes;
+  // Attach tunes this musician was listed as "Learned From" on.
+  const { rows: tunesFrom } = await pool.query(
+    `SELECT id, name, type FROM tunes
+     WHERE who_musician_id = $1 AND user_id = $2
+     ORDER BY name`,
+    [id, userId]
+  );
+  rows[0].tunes_learned_from = tunesFrom;
   return rows[0];
 }
 
 async function createMusician(userId, data) {
   const { rows } = await pool.query(
-    `INSERT INTO musician (user_id, name, instruments, website, notes)
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [userId, data.name, data.instruments || null, data.website || null, data.notes || null]
+    `INSERT INTO musician (user_id, name, instruments, website, notes, is_session_player)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+    [userId, data.name, data.instruments || null, data.website || null, data.notes || null,
+     data.is_session_player ? true : false]
   );
   return rows[0];
 }
 
 async function updateMusician(id, userId, data) {
   const { rows } = await pool.query(
-    `UPDATE musician SET name=$1, instruments=$2, website=$3, notes=$4
-     WHERE id=$5 AND user_id=$6 RETURNING *`,
+    `UPDATE musician SET name=$1, instruments=$2, website=$3, notes=$4, is_session_player=$5
+     WHERE id=$6 AND user_id=$7 RETURNING *`,
     [data.name, data.instruments || null, data.website || null, data.notes || null,
-     id, userId]
+     data.is_session_player ? true : false, id, userId]
   );
   return rows[0] || null;
 }

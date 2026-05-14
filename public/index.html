@@ -199,8 +199,12 @@
 
           <div class="form-row">
             <div class="form-group">
-              <label for="f-who">Learned from</label>
-              <input id="f-who" name="who" type="text" />
+              <label>Learned from</label>
+              <div id="f-who-chip"></div>
+              <div class="typeahead-wrapper">
+                <input id="f-who-input" type="text" placeholder="Search musician…" autocomplete="off" />
+                <div id="f-who-suggestions" class="typeahead-suggestions hidden"></div>
+              </div>
             </div>
             <div class="form-group">
               <label for="f-where">Where</label>
@@ -517,6 +521,12 @@
           <div class="form-group">
             <label for="mf-notes">Notes</label>
             <textarea id="mf-notes" name="notes" rows="3"></textarea>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-item" style="justify-content:flex-start;gap:8px;">
+              <input type="checkbox" id="mf-session-player" name="is_session_player" />
+              Session player
+            </label>
           </div>
           <div class="form-actions">
             <button type="submit" class="btn btn-primary btn-large">Save Musician</button>
