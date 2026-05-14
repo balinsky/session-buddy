@@ -1209,7 +1209,14 @@ async function createMusician(userId, data) {
     [userId, data.name, data.instruments || null, data.website || null, data.notes || null,
      data.is_session_player ? true : false]
   );
-  return rows[0];
+  const musician = rows[0];
+  await pool.query(
+    `UPDATE tunes SET who_musician_id = $1
+     WHERE user_id = $2 AND who_musician_id IS NULL
+       AND LOWER(TRIM(who)) = LOWER(TRIM($3))`,
+    [musician.id, userId, musician.name]
+  );
+  return musician;
 }
 
 async function updateMusician(id, userId, data) {
@@ -1219,7 +1226,14 @@ async function updateMusician(id, userId, data) {
     [data.name, data.instruments || null, data.website || null, data.notes || null,
      data.is_session_player ? true : false, id, userId]
   );
-  return rows[0] || null;
+  if (!rows[0]) return null;
+  await pool.query(
+    `UPDATE tunes SET who_musician_id = $1
+     WHERE user_id = $2 AND who_musician_id IS NULL
+       AND LOWER(TRIM(who)) = LOWER(TRIM($3))`,
+    [rows[0].id, userId, rows[0].name]
+  );
+  return rows[0];
 }
 
 async function deleteMusician(id, userId) {
