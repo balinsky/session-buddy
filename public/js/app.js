@@ -321,6 +321,7 @@ const NAV_SECTION = {
   'series-detail': 'classes', 'series-form': 'classes',
   'musician-detail': 'classes', 'musician-form': 'classes',
   'class-import': 'classes',
+  musicians: null,
 };
 
 function showView(viewId, pushToHistory = true) {
@@ -330,8 +331,9 @@ function showView(viewId, pushToHistory = true) {
   // Nav is always visible except on the welcome screen
   document.getElementById('bottom-nav').classList.toggle('hidden', viewId === 'welcome');
 
-  const showBack = viewId !== 'welcome' && viewId !== 'tunes' && viewId !== 'sets' && viewId !== 'classes';
+  const showBack = viewId !== 'welcome' && viewId !== 'tunes' && viewId !== 'sets' && viewId !== 'classes' && viewId !== 'musicians';
   document.getElementById('back-btn').classList.toggle('hidden', !showBack);
+  document.getElementById('hamburger-btn').classList.toggle('hidden', showBack || viewId === 'welcome');
 
   const activeSection = NAV_SECTION[viewId];
   document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -368,6 +370,8 @@ function goBack() {
     goToSets();
   } else if (prev === 'classes') {
     goToClasses();
+  } else if (prev === 'musicians') {
+    goToMusicians();
   } else {
     showView(prev, false);
     if (VIEW_TITLES[prev]) {
@@ -2357,6 +2361,37 @@ async function saveSeriesForm(e) {
   }
 }
 
+// ===== MUSICIANS LIST =====
+
+async function goToMusicians() {
+  state.backStack = ['musicians'];
+  showView('musicians', false);
+  document.getElementById('header-title').textContent = 'Musicians';
+  try {
+    const musicians = await API.getMusicians();
+    renderMusiciansList(musicians);
+  } catch (e) {
+    showError('Could not load musicians: ' + e.message);
+  }
+}
+
+function renderMusiciansList(musicians) {
+  const container = document.getElementById('musician-list');
+  if (!musicians.length) {
+    container.innerHTML = '<div class="empty-list"><p>No musicians yet.</p><p class="hint">Link a musician from a tune or class detail page.</p></div>';
+    return;
+  }
+  container.innerHTML = musicians.map(m => `
+    <div class="musician-list-item" data-musician-id="${m.id}">
+      <span class="musician-list-item-name">${esc(m.name)}</span>
+      ${m.is_session_player ? `<span class="status-badge status-memorized" style="font-size:0.72rem;padding:2px 7px;">Session</span>` : ''}
+    </div>
+  `).join('');
+  container.querySelectorAll('.musician-list-item').forEach(el => {
+    el.addEventListener('click', () => goToMusicianDetail(Number(el.dataset.musicianId)));
+  });
+}
+
 // ===== MUSICIAN DETAIL & FORM =====
 
 async function goToMusicianDetail(musicianId) {
@@ -3134,6 +3169,31 @@ function init() {
   // Header buttons
   document.getElementById('back-btn').addEventListener('click', goBack);
   document.getElementById('sync-btn').addEventListener('click', openSyncModal);
+
+  // Hamburger menu
+  const hamburgerMenu = document.getElementById('hamburger-menu');
+  function openHamburgerMenu() {
+    hamburgerMenu.classList.remove('hidden');
+    // Trigger animation on next frame
+    requestAnimationFrame(() => hamburgerMenu.classList.add('open'));
+  }
+  function closeHamburgerMenu() {
+    hamburgerMenu.classList.remove('open');
+    hamburgerMenu.addEventListener('transitionend', () => hamburgerMenu.classList.add('hidden'), { once: true });
+  }
+  document.getElementById('hamburger-btn').addEventListener('click', openHamburgerMenu);
+  document.getElementById('hamburger-close-btn').addEventListener('click', closeHamburgerMenu);
+  hamburgerMenu.querySelector('.hamburger-backdrop').addEventListener('click', closeHamburgerMenu);
+  hamburgerMenu.querySelectorAll('.hamburger-nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      closeHamburgerMenu();
+      const dest = btn.dataset.goto;
+      if (dest === 'tunes') goToTunes();
+      else if (dest === 'sets') goToSets();
+      else if (dest === 'classes') goToClasses();
+      else if (dest === 'musicians') goToMusicians();
+    });
+  });
 
   // Bottom nav
   document.getElementById('nav-tunes').addEventListener('click', goToTunes);

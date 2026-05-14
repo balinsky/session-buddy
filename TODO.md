@@ -4,10 +4,10 @@ This is a list of items to be done.
 * Add attributes to each of my entities. Ask my AI to "I've added basic attributes and descriptions for my entities. Without adding unnecessary complexity, can you think of important attributes I might be missing, given my app's purpose? Ask me clarifying questions, and suggest changes."
 * Draw the relationships between my entities
 * Activity: Think through the basic operations or actions in the domain, and write those down too.
-* Practice log: track individual practice/play events (tune, date, type of event — practice vs. session play, optional notes). Show a history of events on the tune detail page and allow filtering/summary by date range.
 * Broader Musician feature: replace the free-text "who" field on tunes with a reference to a musician, capture session-player relationships (a musician can be a teacher in one context and a fellow player in another). Foundation for this lands with Classes Phase 1; the tunes.who replacement and session-player tracking are deferred until after Classes ships.
 
 Already completed:
+* Practice log: track individual practice/play events (tune, date, type of event — practice vs. session play, optional notes). Show a history of events on the tune detail page and allow filtering/summary by date range.
 Code improvements (from code-improver review):
 * Extract the shared `col()` CSV column-lookup helper into a single utility module (currently copy-pasted identically into routes/tunes.js, routes/sets.js, and routes/classes.js).
 * Wrap createSet/updateSet in transactions — tune insertions happen one-by-one with no rollback protection if the server crashes mid-way.
