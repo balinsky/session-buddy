@@ -56,6 +56,7 @@ const state = {
   backStack: [],
   tuneSearch: '',
   setSearch: '',
+  classSearch: '',
   tuneFilter: {
     favoriteOnly: false,
     statuses: [],
@@ -1707,6 +1708,7 @@ async function goToClasses() {
   state.backStack = ['classes'];
   showView('classes', false);
   document.getElementById('header-title').textContent = 'My Classes';
+  document.getElementById('class-search').value = state.classSearch;
   try {
     // Fetch series alongside classes so empty series still appear as
     // navigable headers — otherwise the user couldn't reach a series'
@@ -1716,20 +1718,24 @@ async function goToClasses() {
     ]);
     state.classes = classes;
     state.allSeries = allSeries;
-    renderClassesList(classes, allSeries);
+    renderClassesList(classes, allSeries, state.classSearch);
   } catch (e) {
     showError('Could not load classes: ' + e.message);
   }
 }
 
-function renderClassesList(classes, allSeries) {
+function renderClassesList(classes, allSeries, searchQuery) {
   updateFilterBtnStyle('btn-class-filter', isClassFilterActive());
-  const filtered = applyClassFilter(classes || []);
-  const filterActive = isClassFilterActive();
+  const query = (searchQuery || '').toLowerCase().trim();
+  let filtered = applyClassFilter(classes || []);
+  if (query) {
+    filtered = filtered.filter(c => (c.name || '').toLowerCase().includes(query));
+  }
+  const filterActive = isClassFilterActive() || !!query;
   const container = document.getElementById('class-list');
   if ((!filtered.length) && (!allSeries || allSeries.length === 0 || filterActive)) {
     const msg = filterActive
-      ? '<div class="empty-list"><p>No classes match the filter.</p></div>'
+      ? '<div class="empty-list"><p>No classes match.</p></div>'
       : '<div class="empty-list"><p>No classes yet.</p><p class="hint">Tap + New Class to add one.</p></div>';
     container.innerHTML = msg;
     return;
@@ -3118,14 +3124,14 @@ function applyClassFilterFromModal() {
     dateTo: document.getElementById('clf-date-to').value,
   };
   closeClassFilter();
-  renderClassesList(state.classes, state.allSeries);
+  renderClassesList(state.classes, state.allSeries, state.classSearch);
 }
 
 function clearClassFilter() {
   state.classFilter = { seriesIds: [], instrument: '', organizer: '', instructor: '', dateFrom: '', dateTo: '' };
   state.filterDraftClassSeriesIds = [];
   closeClassFilter();
-  renderClassesList(state.classes, state.allSeries);
+  renderClassesList(state.classes, state.allSeries, state.classSearch);
 }
 
 // ===== INCIPIT LIVE PREVIEW IN FORM =====
@@ -3372,6 +3378,12 @@ function init() {
   document.getElementById('set-search').addEventListener('input', e => {
     state.setSearch = e.target.value;
     renderSetList(state.sets, state.setSearch);
+  });
+
+  // Class list search
+  document.getElementById('class-search').addEventListener('input', e => {
+    state.classSearch = e.target.value;
+    renderClassesList(state.classes, state.allSeries, state.classSearch);
   });
 
   // Add tune / import / export
