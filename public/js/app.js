@@ -1467,7 +1467,10 @@ function renderSetDetail(set) {
 
       html += `
         <div class="set-tune-card" data-id="${tune.id}">
-          <div class="set-tune-name">${idx + 1}. ${esc(tune.name)}</div>`;
+          <div class="tune-card-top">
+            <div class="set-tune-name">${idx + 1}. ${esc(tune.name)}</div>
+            <button class="list-heart-btn ${tune.favorite ? 'is-favorite' : ''}" data-id="${tune.id}" aria-label="Toggle favorite">&#9829;</button>
+          </div>`;
 
       incipitParts.forEach(({ part, incipit }) => {
         html += `
@@ -1498,6 +1501,22 @@ function renderSetDetail(set) {
   requestAnimationFrame(() => {
     set.tunes.forEach(tune => {
       if (tune.incipit_a) renderAbcInto(`set-notation-${tune.id}-a`, tune.incipit_a, tune.type, tune.key);
+    });
+  });
+
+  // Tune favorite hearts
+  container.querySelectorAll('.list-heart-btn').forEach(btn => {
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const tuneId = Number(btn.dataset.id);
+      const newFav = btn.classList.contains('is-favorite') ? 0 : 1;
+      btn.classList.toggle('is-favorite', !!newFav);
+      try {
+        await API.patchTune(tuneId, { favorite: newFav });
+      } catch (err) {
+        btn.classList.toggle('is-favorite', !newFav);
+        showError('Could not update favorite: ' + err.message);
+      }
     });
   });
 
