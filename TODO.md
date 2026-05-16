@@ -1,4 +1,15 @@
 This is a list of items to be done.
+
+Maybe someday:
+* Tempo tracking per tune — log your current BPM over time to see progress.
+* Practice session timer — a stopwatch you can run during practice, with optional notes at the end ("still shaky on the B part").
+* Tune difficulty self-rating — beginner / working on / solid, to help prioritize what needs attention.
+* Filter sets by key — since key clashes are a real problem when calling tunes at a session.
+* "Surprise me" — a random set picker, weighted toward sets you haven't played recently.
+* Tune relationships — link variants of the same tune (same tune in two keys, closely related melodies).
+* Setlist builder — a scratch space for planning a gig or session night's running order, separate from your permanent sets.
+* ABC playback — abcjs supports audio; could let you tap a button to hear an incipit.
+* Export to PDF or shareable text — for handing a set list to other musicians.
 * OCR for sheet music and Irish ABC images (stretch goal — recognise notation in uploaded images so we can search/render them).
 
 * Add attributes to each of my entities. Ask my AI to "I've added basic attributes and descriptions for my entities. Without adding unnecessary complexity, can you think of important attributes I might be missing, given my app's purpose? Ask me clarifying questions, and suggest changes."
