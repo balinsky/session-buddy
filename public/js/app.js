@@ -414,6 +414,7 @@ function renderTuneList(tunes, searchQuery) {
     const strippedQuery = query.replace(/\s+/g, '');
     filtered = filtered.filter(t =>
       t.name.toLowerCase().includes(query) ||
+      (t.alternate_titles || '').toLowerCase().includes(query) ||
       (t.type || '').toLowerCase().includes(query) ||
       (t.key || '').toLowerCase().includes(query) ||
       (t.thesession_id || '').toLowerCase().includes(query) ||
@@ -698,6 +699,7 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
   // Always-visible fields. Instrument list is shown by the per-instrument
   // status table above, so it's not duplicated here.
   const visibleFields = [];
+  if (tune.alternate_titles) visibleFields.push(['Also known as', esc(tune.alternate_titles)]);
   if (tune.sequence_id) visibleFields.push(['Sequence ID', esc(tune.sequence_id)]);
   if (tune.mnemonic) visibleFields.push(['Mnemonic', esc(tune.mnemonic)]);
   if (tune.composer) visibleFields.push(['Composer', esc(tune.composer)]);
@@ -1108,6 +1110,7 @@ async function goToTuneForm(tune = null) {
     form.elements['date_learned'].value = tune.date_learned || '';
     form.elements['last_practiced_date'].value = tune.last_practiced_date || '';
     form.elements['notes'].value = tune.notes || '';
+    form.elements['alternate_titles'].value = tune.alternate_titles || '';
 
     requestAnimationFrame(() => {
       ['a', 'b', 'c'].forEach(part => {
@@ -1286,6 +1289,7 @@ async function saveTuneForm(e) {
     date_learned: form.elements['date_learned'].value.trim(),
     last_practiced_date: form.elements['last_practiced_date'].value.trim(),
     notes: form.elements['notes'].value.trim(),
+    alternate_titles: form.elements['alternate_titles'].value.trim(),
     class_ids: state.tuneFormClassIds || [],
   };
 
@@ -1349,6 +1353,7 @@ function renderSetList(sets, searchQuery) {
     filtered = filtered.filter(s =>
       (s.tunes || []).some(t =>
         t.name.toLowerCase().includes(query) ||
+        (t.alternate_titles || '').toLowerCase().includes(query) ||
         (t.type || '').toLowerCase().includes(query) ||
         (t.key || '').toLowerCase().includes(query) ||
         (t.thesession_id || '').toLowerCase().includes(query) ||
@@ -1639,6 +1644,7 @@ function renderSetFormTuneList(searchQuery) {
   if (query) {
     tunes = tunes.filter(t =>
       t.name.toLowerCase().includes(query) ||
+      (t.alternate_titles || '').toLowerCase().includes(query) ||
       (t.type || '').toLowerCase().includes(query) ||
       (t.thesession_id || '').toLowerCase().includes(query) ||
       (t.sequence_id || '').toLowerCase().includes(query)
@@ -2185,6 +2191,7 @@ function renderClassFormTuneList(searchQuery) {
   if (query) {
     tunes = tunes.filter(t =>
       t.name.toLowerCase().includes(query) ||
+      (t.alternate_titles || '').toLowerCase().includes(query) ||
       (t.type || '').toLowerCase().includes(query) ||
       (t.thesession_id || '').toLowerCase().includes(query) ||
       (t.sequence_id || '').toLowerCase().includes(query)
@@ -2699,7 +2706,7 @@ function exportTunesCsv() {
   // tracked for that tune).
   const perInstrumentHeaders = INSTRUMENTS.map(i => `Learned (${i})`);
   const headers = [
-    'Name', 'Type', 'Key', 'Parts', 'Incipit A', 'Incipit B', 'Incipit C',
+    'Name', 'Alternate Titles', 'Type', 'Key', 'Parts', 'Incipit A', 'Incipit B', 'Incipit C',
     'Count', 'Added', 'Where', 'Who', 'Mnemonic', 'Tunebooks', 'Date Learned',
     'Favorite', 'Thesession ID', 'Setting', 'Notes', 'Composer',
     'Last Practiced Date', 'Instrument', 'Sequence ID',
@@ -2711,7 +2718,7 @@ function exportTunesCsv() {
     for (const r of t.instrument_statuses || []) byInstrument[r.instrument] = r.status;
     const instrumentList = (t.instrument_statuses || []).map(r => r.instrument).join(', ');
     return [
-      t.name, t.type, t.key, t.parts,
+      t.name, t.alternate_titles, t.type, t.key, t.parts,
       t.incipit_a, t.incipit_b, t.incipit_c,
       t.count, t.added_date, t.where_learned, t.who,
       t.mnemonic, t.tunebooks, t.date_learned,

@@ -159,6 +159,7 @@ router.post('/import', upload.single('csv'), async (req, res) => {
         thesession_id: col(row, 'Thesession ID'),
         setting: col(row, 'Setting'),
         notes: col(row, 'Notes'),
+        alternate_titles: col(row, 'Alternate Titles'),
         composer: col(row, 'Composer'),
         last_practiced_date: col(row, 'Last Practiced Date'),
         instrument,

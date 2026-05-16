@@ -56,6 +56,7 @@ async function init() {
   `);
   // Add new columns to existing databases that predate these fields
   await pool.query(`ALTER TABLE tunes ADD COLUMN IF NOT EXISTS sequence_id TEXT`);
+  await pool.query(`ALTER TABLE tunes ADD COLUMN IF NOT EXISTS alternate_titles TEXT`);
   await pool.query(`ALTER TABLE sets ADD COLUMN IF NOT EXISTS favorite INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE sets ADD COLUMN IF NOT EXISTS last_practiced_date TEXT`);
   // Phase 6 of design/PerInstrumentStatus.md: the legacy single-status and
@@ -421,6 +422,7 @@ function tuneParams(userId, data) {
     data.last_practiced_date || null,
     data.sequence_id || null,
     data.who_musician_id || null,
+    data.alternate_titles || null,
   ];
 }
 
@@ -432,9 +434,9 @@ async function createTune(userId, data) {
       count, added_date, where_learned, who,
       mnemonic, tunebooks, date_learned, favorite,
       thesession_id, setting, notes, composer, last_practiced_date,
-      sequence_id, who_musician_id
+      sequence_id, who_musician_id, alternate_titles
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
     ) RETURNING *`,
     tuneParams(userId, data)
   );
@@ -451,8 +453,8 @@ async function updateTune(id, userId, data) {
       where_learned=$10, who=$11, mnemonic=$12, tunebooks=$13,
       date_learned=$14, favorite=$15, thesession_id=$16,
       setting=$17, notes=$18, composer=$19, last_practiced_date=$20,
-      sequence_id=$21, who_musician_id=$22
-    WHERE id=$23 AND user_id=$24
+      sequence_id=$21, who_musician_id=$22, alternate_titles=$23
+    WHERE id=$24 AND user_id=$25
     RETURNING *`,
     params
   );
@@ -476,9 +478,9 @@ async function insertManyTunes(userId, tunes) {
           count, added_date, where_learned, who,
           mnemonic, tunebooks, date_learned, favorite,
           thesession_id, setting, notes, composer, last_practiced_date,
-          sequence_id, who_musician_id
+          sequence_id, who_musician_id, alternate_titles
         ) VALUES (
-          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
         ) RETURNING *`,
         tuneParams(userId, tune)
       );
