@@ -1526,10 +1526,9 @@ function renderSetDetail(set, setImages = [], tuneImagesMap = new Map()) {
     });
   }
 
-  // Attachments card — set-level PDFs + per-tune images
+  // Attachments card — set-level PDFs + per-tune images + upload
   const syncCode = encodeURIComponent(localStorage.getItem('syncCode') || '');
-  const hasAnyImages = setImages.length > 0 || set.tunes.some(t => (tuneImagesMap.get(t.id) || []).length > 0);
-  if (hasAnyImages) {
+  {
     html += `<div class="detail-card" id="set-image-card">
       <div class="detail-card-title">Scores &amp; Attachments</div>`;
 
@@ -1538,7 +1537,7 @@ function renderSetDetail(set, setImages = [], tuneImagesMap = new Map()) {
         const isPdf = img.mime_type === 'application/pdf';
         const url = `/api/sets/${set.id}/image/${img.id}?code=${syncCode}&t=${Date.now()}`;
         return `<div class="tune-image-item">
-          <button class="set-image-thumb" type="button"
+          <button class="tune-image-thumb set-image-thumb" type="button"
                   data-image-id="${img.id}" data-set-id="${set.id}" data-source="set"
                   data-mime="${esc(img.mime_type)}" data-filename="${esc(img.filename)}">
             ${isPdf
@@ -1564,7 +1563,7 @@ function renderSetDetail(set, setImages = [], tuneImagesMap = new Map()) {
           const isPdf = img.mime_type === 'application/pdf';
           const url = `/api/tunes/${img.source_id}/image/${img.id}?code=${syncCode}&t=${Date.now()}`;
           return `<div class="tune-image-item">
-            <button class="set-image-thumb" type="button"
+            <button class="tune-image-thumb set-image-thumb" type="button"
                     data-image-id="${img.id}" data-source-id="${img.source_id}" data-source="tune"
                     data-mime="${esc(img.mime_type)}" data-filename="${esc(img.filename)}">
               ${isPdf
@@ -1580,7 +1579,15 @@ function renderSetDetail(set, setImages = [], tuneImagesMap = new Map()) {
       </div>`;
     });
 
-    html += `</div>`;
+    html += `
+      <label class="file-drop-zone file-drop-zone--compact" id="set-image-drop-zone">
+        <span id="set-image-file-label">Tap to add image or PDF</span>
+        <input id="set-image-file-input" type="file"
+               accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" style="display:none" />
+      </label>
+      <button class="btn btn-primary btn-small hidden" id="btn-upload-set-image" style="margin-top:8px;">Upload</button>
+      <div id="set-image-status" class="hint" style="margin-top:6px;min-height:1em;"></div>
+    </div>`;
   }
 
   // Practice card
@@ -1660,6 +1667,33 @@ function renderSetDetail(set, setImages = [], tuneImagesMap = new Map()) {
         btn.dataset.source, null, set.id
       );
     });
+  });
+
+  // Set image upload
+  const setImgFileInput = document.getElementById('set-image-file-input');
+  const setImgFileLabel = document.getElementById('set-image-file-label');
+  const btnUploadSetImage = document.getElementById('btn-upload-set-image');
+  const setImgStatus = document.getElementById('set-image-status');
+
+  setImgFileInput.addEventListener('change', () => {
+    const f = setImgFileInput.files[0];
+    setImgFileLabel.textContent = f ? f.name : 'Tap to add image or PDF';
+    btnUploadSetImage.classList.toggle('hidden', !f);
+    setImgStatus.textContent = '';
+  });
+
+  btnUploadSetImage.addEventListener('click', async () => {
+    const f = setImgFileInput.files[0];
+    if (!f) return;
+    btnUploadSetImage.disabled = true;
+    setImgStatus.textContent = 'Uploading…';
+    try {
+      await API.uploadSetImage(set.id, f);
+      goToSetDetail(set.id);
+    } catch (err) {
+      setImgStatus.textContent = 'Upload failed: ' + err.message;
+      btnUploadSetImage.disabled = false;
+    }
   });
 
   // Set image delete buttons (set-level PDFs only; tune images are read-only from set view)

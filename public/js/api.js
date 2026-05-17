@@ -67,6 +67,11 @@ const API = (() => {
     },
     deleteTuneImage: (tuneId, imageId) => request('DELETE', `/api/tunes/${tuneId}/image/${imageId}`),
     getSetImages: (id) => request('GET', `/api/sets/${id}/images`),
+    uploadSetImage: (id, file) => {
+      const form = new FormData();
+      form.append('image', file);
+      return request('POST', `/api/sets/${id}/image`, form, true);
+    },
     deleteSetImage: (setId, imageId) => request('DELETE', `/api/sets/${setId}/image/${imageId}`),
     importImages: (file) => {
       const form = new FormData();
