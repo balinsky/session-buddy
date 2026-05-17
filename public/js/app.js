@@ -1050,8 +1050,8 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
 // ===== IMAGE VIEWER =====
 
 // source: 'tune'|'set'; sourceId: the tune or set id the image belongs to;
-// originTuneId: the tune detail page to return to after delete.
-function goToImageViewer(sourceId, imageId, mimeType, filename, source = 'tune', originTuneId = sourceId) {
+// originTuneId/originSetId: which detail page to return to after delete.
+function goToImageViewer(sourceId, imageId, mimeType, filename, source = 'tune', originTuneId = null, originSetId = null) {
   showView('image-viewer');
   document.getElementById('header-title').textContent = filename || 'Attachment';
   const code = encodeURIComponent(localStorage.getItem('syncCode') || '');
@@ -1082,9 +1082,10 @@ function goToImageViewer(sourceId, imageId, mimeType, filename, source = 'tune',
       } else {
         await API.deleteTuneImage(sourceId, imageId);
       }
-      // Clear image-viewer from back stack then return to the originating tune detail
+      // Clear image-viewer from back stack then return to the originating detail view
       state.backStack = state.backStack.filter(v => v !== 'image-viewer');
-      goToTuneDetail(originTuneId);
+      if (originSetId) goToSetDetail(originSetId);
+      else goToTuneDetail(originTuneId);
     } catch (err) {
       showError('Could not remove: ' + err.message);
     }
@@ -1468,14 +1469,23 @@ async function goToSetDetail(setId) {
   document.getElementById('header-title').textContent = 'Set Detail';
 
   try {
-    const set = await API.getSet(setId);
-    renderSetDetail(set);
+    const [set, setImages] = await Promise.all([
+      API.getSet(setId),
+      API.getSetImages(setId),
+    ]);
+    // Fetch each component tune's own images (filter to source==='tune' to
+    // avoid re-showing the set PDF that already appears in setImages).
+    const perTuneImages = await Promise.all(set.tunes.map(t => API.getTuneImages(t.id)));
+    const tuneImagesMap = new Map(
+      set.tunes.map((t, i) => [t.id, perTuneImages[i].filter(img => img.source === 'tune')])
+    );
+    renderSetDetail(set, setImages, tuneImagesMap);
   } catch (e) {
     showError('Could not load set: ' + e.message);
   }
 }
 
-function renderSetDetail(set) {
+function renderSetDetail(set, setImages = [], tuneImagesMap = new Map()) {
   let html = `
     <div class="detail-header">
       <div class="detail-title-row">
@@ -1514,6 +1524,63 @@ function renderSetDetail(set) {
 
       html += `</div>`;
     });
+  }
+
+  // Attachments card — set-level PDFs + per-tune images
+  const syncCode = encodeURIComponent(localStorage.getItem('syncCode') || '');
+  const hasAnyImages = setImages.length > 0 || set.tunes.some(t => (tuneImagesMap.get(t.id) || []).length > 0);
+  if (hasAnyImages) {
+    html += `<div class="detail-card" id="set-image-card">
+      <div class="detail-card-title">Scores &amp; Attachments</div>`;
+
+    if (setImages.length > 0) {
+      html += `<div class="tune-image-list">${setImages.map(img => {
+        const isPdf = img.mime_type === 'application/pdf';
+        const url = `/api/sets/${set.id}/image/${img.id}?code=${syncCode}&t=${Date.now()}`;
+        return `<div class="tune-image-item">
+          <button class="set-image-thumb" type="button"
+                  data-image-id="${img.id}" data-set-id="${set.id}" data-source="set"
+                  data-mime="${esc(img.mime_type)}" data-filename="${esc(img.filename)}">
+            ${isPdf
+              ? `<span class="tune-image-pdf-icon">&#128196;</span>`
+              : `<img src="${url}" class="tune-image-thumb-img" alt="${esc(img.filename)}"
+                     onerror="this.parentNode.innerHTML='<span class=tune-image-broken>&#128444;</span>'" />`
+            }
+            <span class="tune-image-thumb-label">&#128269; View</span>
+          </button>
+          <div class="tune-image-filename">${esc(img.filename)}</div>
+          <button class="btn btn-danger btn-small set-image-delete-btn"
+                  data-image-id="${img.id}" data-set-id="${set.id}">Remove</button>
+        </div>`;
+      }).join('')}</div>`;
+    }
+
+    set.tunes.forEach(tune => {
+      const imgs = tuneImagesMap.get(tune.id) || [];
+      if (imgs.length === 0) return;
+      html += `<div class="set-tune-image-group">
+        <div class="set-tune-image-label">${esc(tune.name)}</div>
+        <div class="tune-image-list">${imgs.map(img => {
+          const isPdf = img.mime_type === 'application/pdf';
+          const url = `/api/tunes/${img.source_id}/image/${img.id}?code=${syncCode}&t=${Date.now()}`;
+          return `<div class="tune-image-item">
+            <button class="set-image-thumb" type="button"
+                    data-image-id="${img.id}" data-source-id="${img.source_id}" data-source="tune"
+                    data-mime="${esc(img.mime_type)}" data-filename="${esc(img.filename)}">
+              ${isPdf
+                ? `<span class="tune-image-pdf-icon">&#128196;</span>`
+                : `<img src="${url}" class="tune-image-thumb-img" alt="${esc(img.filename)}"
+                       onerror="this.parentNode.innerHTML='<span class=tune-image-broken>&#128444;</span>'" />`
+              }
+              <span class="tune-image-thumb-label">&#128269; View</span>
+            </button>
+            <div class="tune-image-filename">${esc(img.filename)}</div>
+          </div>`;
+        }).join('')}</div>
+      </div>`;
+    });
+
+    html += `</div>`;
   }
 
   // Practice card
@@ -1582,6 +1649,31 @@ function renderSetDetail(set) {
   document.getElementById('btn-new-set-from-detail').addEventListener('click', () => goToSetForm(null));
   document.getElementById('btn-edit-set').addEventListener('click', () => goToSetForm(set));
   document.getElementById('btn-delete-set').addEventListener('click', () => deleteSet(set));
+
+  // Set image thumbnails — open viewer
+  container.querySelectorAll('.set-image-thumb').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sourceId = Number(btn.dataset.setId || btn.dataset.sourceId);
+      goToImageViewer(
+        sourceId, Number(btn.dataset.imageId),
+        btn.dataset.mime, btn.dataset.filename,
+        btn.dataset.source, null, set.id
+      );
+    });
+  });
+
+  // Set image delete buttons (set-level PDFs only; tune images are read-only from set view)
+  container.querySelectorAll('.set-image-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Remove this attachment?')) return;
+      try {
+        await API.deleteSetImage(Number(btn.dataset.setId), Number(btn.dataset.imageId));
+        goToSetDetail(set.id);
+      } catch (err) {
+        showError('Could not remove: ' + err.message);
+      }
+    });
+  });
 
   container.querySelectorAll('.set-tune-card').forEach(card => {
     card.addEventListener('click', () => goToTuneDetail(Number(card.dataset.id)));
