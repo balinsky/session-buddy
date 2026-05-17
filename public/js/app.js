@@ -641,24 +641,32 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
 
   // Attachments section (images + PDFs)
   const syncCode = encodeURIComponent(localStorage.getItem('syncCode') || '');
-  const attachUrl = (imgId) => `/api/tunes/${tune.id}/image/${imgId}?code=${syncCode}&t=${Date.now()}`;
+  const attachUrl = (img) => {
+    const base = img.source === 'set'
+      ? `/api/sets/${img.source_id}/image/${img.id}`
+      : `/api/tunes/${img.source_id}/image/${img.id}`;
+    return `${base}?code=${syncCode}&t=${Date.now()}`;
+  };
   html += `<div class="detail-card" id="tune-image-card">
     <div class="detail-card-title">Images &amp; Attachments</div>
     ${images.length > 0 ? `<div class="tune-image-list">${images.map(img => {
       const isPdf = img.mime_type === 'application/pdf';
+      const src = img.source || 'tune';
+      const srcId = img.source_id || tune.id;
       return `<div class="tune-image-item">
         <button class="tune-image-thumb" type="button"
-                data-image-id="${img.id}" data-mime="${esc(img.mime_type)}" data-filename="${esc(img.filename)}">
+                data-image-id="${img.id}" data-source="${src}" data-source-id="${srcId}"
+                data-mime="${esc(img.mime_type)}" data-filename="${esc(img.filename)}">
           ${isPdf
             ? `<span class="tune-image-pdf-icon">&#128196;</span>`
-            : `<img src="${attachUrl(img.id)}" class="tune-image-thumb-img" alt="${esc(img.filename)}"
+            : `<img src="${attachUrl(img)}" class="tune-image-thumb-img" alt="${esc(img.filename)}"
                    onerror="this.parentNode.innerHTML='<span class=tune-image-broken>&#128444;</span>'" />`
           }
           <span class="tune-image-thumb-label">&#128269; View</span>
         </button>
-        <div class="tune-image-filename">${esc(img.filename)}</div>
+        <div class="tune-image-filename">${esc(img.filename)}${src === 'set' ? ' <span class="tune-image-set-badge">set</span>' : ''}</div>
         <button class="btn btn-danger btn-small tune-image-delete-btn"
-                data-image-id="${img.id}">Remove</button>
+                data-image-id="${img.id}" data-source="${src}" data-source-id="${srcId}">Remove</button>
       </div>`;
     }).join('')}</div>` : ''}
     <label class="file-drop-zone file-drop-zone--compact" id="tune-image-drop-zone">
@@ -982,7 +990,11 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
   // Attachment thumbnails — open viewer
   container.querySelectorAll('.tune-image-thumb').forEach(btn => {
     btn.addEventListener('click', () => {
-      goToImageViewer(tune.id, Number(btn.dataset.imageId), btn.dataset.mime, btn.dataset.filename);
+      goToImageViewer(
+        Number(btn.dataset.sourceId), Number(btn.dataset.imageId),
+        btn.dataset.mime, btn.dataset.filename,
+        btn.dataset.source, tune.id
+      );
     });
   });
 
@@ -991,7 +1003,13 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
     btn.addEventListener('click', async () => {
       if (!confirm('Remove this attachment?')) return;
       try {
-        await API.deleteTuneImage(tune.id, Number(btn.dataset.imageId));
+        const imageId = Number(btn.dataset.imageId);
+        const sourceId = Number(btn.dataset.sourceId);
+        if (btn.dataset.source === 'set') {
+          await API.deleteSetImage(sourceId, imageId);
+        } else {
+          await API.deleteTuneImage(sourceId, imageId);
+        }
         goToTuneDetail(tune.id);
       } catch (err) {
         showError('Could not remove: ' + err.message);
@@ -1031,11 +1049,16 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
 
 // ===== IMAGE VIEWER =====
 
-function goToImageViewer(tuneId, imageId, mimeType, filename) {
+// source: 'tune'|'set'; sourceId: the tune or set id the image belongs to;
+// originTuneId: the tune detail page to return to after delete.
+function goToImageViewer(sourceId, imageId, mimeType, filename, source = 'tune', originTuneId = sourceId) {
   showView('image-viewer');
   document.getElementById('header-title').textContent = filename || 'Attachment';
   const code = encodeURIComponent(localStorage.getItem('syncCode') || '');
-  const url = `/api/tunes/${tuneId}/image/${imageId}?code=${code}&t=${Date.now()}`;
+  const basePath = source === 'set'
+    ? `/api/sets/${sourceId}/image/${imageId}`
+    : `/api/tunes/${sourceId}/image/${imageId}`;
+  const url = `${basePath}?code=${code}&t=${Date.now()}`;
 
   const mediaHtml = mimeType === 'application/pdf'
     ? `<embed src="${url}" type="application/pdf" class="image-viewer-pdf" />
@@ -1054,10 +1077,14 @@ function goToImageViewer(tuneId, imageId, mimeType, filename) {
   document.getElementById('btn-viewer-remove').addEventListener('click', async () => {
     if (!confirm('Remove this attachment?')) return;
     try {
-      await API.deleteTuneImage(tuneId, imageId);
-      // Clear image-viewer from back stack then re-render tune detail
+      if (source === 'set') {
+        await API.deleteSetImage(sourceId, imageId);
+      } else {
+        await API.deleteTuneImage(sourceId, imageId);
+      }
+      // Clear image-viewer from back stack then return to the originating tune detail
       state.backStack = state.backStack.filter(v => v !== 'image-viewer');
-      goToTuneDetail(tuneId);
+      goToTuneDetail(originTuneId);
     } catch (err) {
       showError('Could not remove: ' + err.message);
     }

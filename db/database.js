@@ -88,6 +88,22 @@ async function init() {
   // Partial unique index: prevents the same image being attached to a tune twice,
   // while still allowing multiple distinct images per tune.
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_tune_images_dedup ON tune_images(tune_id, user_id, checksum) WHERE checksum IS NOT NULL`);
+  // Set-level scores/images. Same structure as tune_images but keyed on set_id.
+  // A multi-tune PDF is stored once here; tunes access it via set_tunes JOIN.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS set_images (
+      id SERIAL PRIMARY KEY,
+      set_id INTEGER NOT NULL REFERENCES sets(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      data BYTEA NOT NULL,
+      checksum TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_set_images_set_id ON set_images(set_id)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_set_images_dedup ON set_images(set_id, user_id, checksum) WHERE checksum IS NOT NULL`);
   // Per-instrument learning status (design/PerInstrumentStatus.md). The
   // compound primary key covers tune_id-leading queries, so no separate FK
   // index is needed. As of Phase 6, this table is the sole source of truth
@@ -724,6 +740,61 @@ async function deleteTuneImage(imageId, tuneId, userId) {
   );
 }
 
+// Returns a tune's own images plus images inherited from any set containing the tune.
+// Each row includes `source` ('tune'|'set') and `source_id` for URL routing.
+async function getTuneImagesAll(tuneId, userId) {
+  const { rows } = await pool.query(
+    `SELECT 'tune' AS source, id, tune_id AS source_id, filename, mime_type, created_at
+     FROM tune_images
+     WHERE tune_id = $1 AND user_id = $2
+     UNION ALL
+     SELECT 'set' AS source, si.id, si.set_id AS source_id, si.filename, si.mime_type, si.created_at
+     FROM set_images si
+     JOIN set_tunes st ON st.set_id = si.set_id
+     WHERE st.tune_id = $1 AND si.user_id = $2
+     ORDER BY created_at ASC`,
+    [tuneId, userId]
+  );
+  return rows;
+}
+
+async function addSetImage(setId, userId, filename, mimeType, data, checksum) {
+  const { rows } = await pool.query(
+    `INSERT INTO set_images (set_id, user_id, filename, mime_type, data, checksum)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (set_id, user_id, checksum) WHERE checksum IS NOT NULL DO NOTHING
+     RETURNING id, filename, mime_type, created_at`,
+    [setId, userId, filename, mimeType, data, checksum || null]
+  );
+  return rows[0] || null;
+}
+
+async function getSetImageList(setId, userId) {
+  const { rows } = await pool.query(
+    `SELECT id, filename, mime_type, created_at
+     FROM set_images WHERE set_id = $1 AND user_id = $2
+     ORDER BY created_at ASC`,
+    [setId, userId]
+  );
+  return rows;
+}
+
+async function getSetImageData(imageId, setId, userId) {
+  const { rows } = await pool.query(
+    `SELECT filename, mime_type, data, created_at
+     FROM set_images WHERE id = $1 AND set_id = $2 AND user_id = $3`,
+    [imageId, setId, userId]
+  );
+  return rows[0] || null;
+}
+
+async function deleteSetImage(imageId, setId, userId) {
+  await pool.query(
+    'DELETE FROM set_images WHERE id = $1 AND set_id = $2 AND user_id = $3',
+    [imageId, setId, userId]
+  );
+}
+
 // Higher rank wins when computing a tune's "best" status across instruments.
 const STATUS_RANK = { 'Memorized': 2, 'Learning': 1, 'Not Learned': 0 };
 
@@ -1316,7 +1387,8 @@ module.exports = {
   init,
   getUserBySyncCode, createUser,
   getTunesByUser, getTuneById, createTune, updateTune, deleteTune, insertManyTunes,
-  addTuneImage, getTuneImageList, getTuneImageData, deleteTuneImage,
+  addTuneImage, getTuneImageList, getTuneImageData, deleteTuneImage, getTuneImagesAll,
+  addSetImage, getSetImageList, getSetImageData, deleteSetImage,
   mergeTunes,
   findTuneDup,
   getTuneInstrumentStatuses, setTuneInstrumentStatus, deleteTuneInstrumentStatus,

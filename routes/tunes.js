@@ -347,11 +347,20 @@ router.post('/import', upload.single('csv'), async (req, res) => {
 
 function normalizeForNameMatch(s) {
   // Normalize various Unicode apostrophe-like characters to ASCII apostrophe
-  return s.replace(/[‘’‛ʼʻ´＇`ˈ]/g, "'")
+  return s.replace(/[‘’‛ʼʻ´＇`ˈ]/g, "’")
     .toLowerCase()
-    .replace(/[_\-.]+/g, ' ')
-    .replace(/\s+/g, ' ')
+    // Normalize number variants: "No. 2", "No 2", "Number 2", "#2" → "no 2"
+    .replace(/\bno\.?\s*(\d)/g, "no $1")
+    .replace(/\bnumber\s+(\d)/g, "no $1")
+    .replace(/#\s*(\d)/g, "no $1")
+    .replace(/[_\-.]+/g, " ")
+    .replace(/\s+/g, " ")
     .trim();
+}
+
+// Removes parenthetical and bracketed annotations, e.g. "(Alina Transcription)" or "[draft]"
+function stripParentheticals(s) {
+  return s.replace(/\s*\([^)]*\)/g, "").replace(/\s*\[[^\]]*\]/g, "").trim();
 }
 
 // Longest / multi-word entries first so 'slip jig' is tried before 'jig'
@@ -406,8 +415,25 @@ router.post('/import-images', uploadTarball.single('tarball'), async (req, res) 
     for (const tune of allTunes) {
       if (!tune.name) continue;
       const norm = normalizeForNameMatch(tune.name);
-      nameMap[norm] = tune;
-      coreMap[stripArticles(norm)] = tune;
+      if (!nameMap[norm]) nameMap[norm] = tune;
+      const core = stripArticles(norm);
+      if (!coreMap[core]) coreMap[core] = tune;
+      // Also index alternate titles
+      if (tune.alternate_titles) {
+        for (const alt of tune.alternate_titles.split(',')) {
+          const altNorm = normalizeForNameMatch(alt.trim());
+          if (altNorm && !nameMap[altNorm]) nameMap[altNorm] = tune;
+          const altCore = stripArticles(altNorm);
+          if (altCore && !coreMap[altCore]) coreMap[altCore] = tune;
+        }
+      }
+    }
+
+    // Load all sets with their tunes for multi-title set matching
+    const allSets = await db.getSetsByUser(req.user.id);
+    const setTuneIds = new Map();
+    for (const set of allSets) {
+      setTuneIds.set(set.id, new Set(set.tunes.map(t => t.id)));
     }
 
     let files;
@@ -422,14 +448,47 @@ router.post('/import-images', uploadTarball.single('tarball'), async (req, res) 
 
     for (const { filename, buffer, mimeType } of files) {
       const baseName = path.basename(filename, path.extname(filename));
-      const matchedTune = findTuneMatch(nameMap, coreMap, normalizeForNameMatch(baseName));
-      if (!matchedTune) {
-        unmatched.push({ filename, error: `No tune found matching "${baseName}"` });
-        continue;
+      const cleaned = stripParentheticals(baseName);
+      const parts = cleaned.split(' - ').map(s => s.trim()).filter(Boolean);
+
+      if (parts.length === 1) {
+        // Single title: fuzzy-match a tune
+        const matchedTune = findTuneMatch(nameMap, coreMap, normalizeForNameMatch(parts[0]));
+        if (!matchedTune) {
+          unmatched.push({ filename, reason: `No tune found matching "${parts[0]}"` });
+          continue;
+        }
+        const checksum = createHash('sha256').update(buffer).digest('hex');
+        await db.addTuneImage(matchedTune.id, req.user.id, filename, mimeType, buffer, checksum);
+        imported++;
+      } else {
+        // Multi-title: all parts must match tunes, then find a set containing all of them
+        const matchedTuneIds = [];
+        const unmatchedParts = [];
+        for (const part of parts) {
+          const tune = findTuneMatch(nameMap, coreMap, normalizeForNameMatch(part));
+          if (tune) matchedTuneIds.push(tune.id);
+          else unmatchedParts.push(part);
+        }
+        if (unmatchedParts.length > 0) {
+          unmatched.push({ filename, reason: `Could not match tune name(s): ${unmatchedParts.map(p => `"${p}"`).join(', ')}` });
+          continue;
+        }
+        const matchingSets = allSets.filter(set => {
+          const ids = setTuneIds.get(set.id);
+          return matchedTuneIds.every(id => ids.has(id));
+        });
+        if (matchingSets.length === 0) {
+          unmatched.push({ filename, reason: `No set found containing all ${parts.length} matched tunes` });
+        } else if (matchingSets.length > 1) {
+          const setDesc = matchingSets.map(s => `#${s.id}`).join(', ');
+          unmatched.push({ filename, reason: `Matched multiple sets (${setDesc}) — ambiguous` });
+        } else {
+          const checksum = createHash('sha256').update(buffer).digest('hex');
+          await db.addSetImage(matchingSets[0].id, req.user.id, filename, mimeType, buffer, checksum);
+          imported++;
+        }
       }
-      const checksum = createHash('sha256').update(buffer).digest('hex');
-      await db.addTuneImage(matchedTune.id, req.user.id, filename, mimeType, buffer, checksum);
-      imported++;
     }
 
     res.json({ imported, unmatched });
@@ -588,7 +647,9 @@ const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
 
 router.get('/:id/images', async (req, res) => {
   try {
-    const list = await db.getTuneImageList(req.params.id, req.user.id);
+    // Returns own tune images plus any images from sets containing this tune.
+    // Each item includes `source` ('tune'|'set') and `source_id` for URL routing.
+    const list = await db.getTuneImagesAll(req.params.id, req.user.id);
     res.json(list);
   } catch (err) {
     res.status(500).json({ error: err.message });

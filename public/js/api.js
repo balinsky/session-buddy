@@ -66,6 +66,7 @@ const API = (() => {
       return request('POST', `/api/tunes/${id}/image`, form, true);
     },
     deleteTuneImage: (tuneId, imageId) => request('DELETE', `/api/tunes/${tuneId}/image/${imageId}`),
+    deleteSetImage: (setId, imageId) => request('DELETE', `/api/sets/${setId}/image/${imageId}`),
     importImages: (file) => {
       const form = new FormData();
       form.append('tarball', file);

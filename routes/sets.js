@@ -1,12 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
+const { createHash } = require('crypto');
 const { parse } = require('csv-parse/sync');
 const db = require('../db/database');
 const requireUser = require('../middleware/requireUser');
 const { col } = require('../utils/csv');
 
 const upload = multer({ storage: multer.memoryStorage() });
+const uploadImage = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
 
 router.use(requireUser);
 
@@ -196,6 +200,63 @@ router.post('/:id/practice', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     await db.deleteSet(req.params.id, req.user.id);
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Set image/score attachment routes ---
+
+router.get('/:id/images', async (req, res) => {
+  try {
+    const list = await db.getSetImageList(req.params.id, req.user.id);
+    res.json(list);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:id/image/:imageId', async (req, res) => {
+  try {
+    const image = await db.getSetImageData(req.params.imageId, req.params.id, req.user.id);
+    if (!image) return res.status(404).send('Not found.');
+    res.set('ETag', `"simg-${req.params.imageId}"`);
+    if (image.created_at) {
+      res.set('Last-Modified', new Date(image.created_at).toUTCString());
+    }
+    res.set('Cache-Control', 'private, max-age=3600, immutable');
+    res.set('Content-Type', image.mime_type);
+    if (req.fresh) return res.status(304).end();
+    const buf = Buffer.isBuffer(image.data)
+      ? image.data
+      : Buffer.from(String(image.data).replace(/^\\x/, ''), 'hex');
+    res.send(buf);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/image', uploadImage.single('image'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'File required.' });
+    const { mimetype, originalname, buffer } = req.file;
+    if (!ALLOWED_MIME_TYPES.includes(mimetype)) {
+      return res.status(400).json({ error: 'Only JPEG, PNG, and PDF files are supported.' });
+    }
+    const set = await db.getSetById(req.params.id, req.user.id);
+    if (!set) return res.status(404).json({ error: 'Set not found.' });
+    const checksum = createHash('sha256').update(buffer).digest('hex');
+    const image = await db.addSetImage(set.id, req.user.id, originalname, mimetype, buffer, checksum);
+    res.json(image);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/image/:imageId', async (req, res) => {
+  try {
+    await db.deleteSetImage(req.params.imageId, req.params.id, req.user.id);
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: err.message });
