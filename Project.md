@@ -183,6 +183,9 @@ A bottom-sheet modal with the following criteria (any combination):
 A bottom-sheet modal with:
 - Favorites only
 - Contains Tune Type (multi-select — shows sets that contain at least one tune of the selected type)
+- Contains Tune Key (text, substring match against any tune's key in the set)
+- Last Practiced within the last N days
+- Contains Tune From Class (multi-select — shows sets that contain at least one tune from any selected class)
 
 ---
 

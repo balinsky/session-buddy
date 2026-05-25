@@ -71,6 +71,7 @@ const state = {
   setFilter: {
     favoriteOnly: false,
     types: [],
+    key: '',
     practicedDays: null,
     classIds: [],
   },
@@ -208,7 +209,8 @@ function isTuneFilterActive() {
 
 function isSetFilterActive() {
   const f = state.setFilter;
-  return f.favoriteOnly || f.types.length > 0 || f.practicedDays !== null || f.classIds.length > 0;
+  return f.favoriteOnly || f.types.length > 0 || f.key !== '' ||
+    f.practicedDays !== null || f.classIds.length > 0;
 }
 
 function isClassFilterActive() {
@@ -298,6 +300,11 @@ function applySetFilter(sets) {
     if (f.types.length) {
       const setTypes = (s.tunes || []).map(t => t.type).filter(Boolean);
       if (!f.types.some(type => setTypes.includes(type))) return false;
+    }
+    if (f.key) {
+      const q = f.key.toLowerCase();
+      const match = (s.tunes || []).some(t => (t.key || '').toLowerCase().includes(q));
+      if (!match) return false;
     }
     if (f.practicedDays != null) {
       if (!s.last_practiced_date) return false;
@@ -3204,6 +3211,7 @@ async function openSetFilter() {
   const f = state.setFilter;
   document.getElementById('sf-fav-only').checked = f.favoriteOnly;
   document.querySelectorAll('.sf-type').forEach(cb => { cb.checked = f.types.includes(cb.value); });
+  document.getElementById('sf-key').value = f.key || '';
   document.getElementById('sf-days').value = f.practicedDays != null ? f.practicedDays : '';
   document.getElementById('sf-class-input').value = '';
   document.getElementById('sf-class-suggestions').classList.add('hidden');
@@ -3221,6 +3229,7 @@ async function applySetFilterFromModal() {
   state.setFilter = {
     favoriteOnly: document.getElementById('sf-fav-only').checked,
     types: Array.from(document.querySelectorAll('.sf-type:checked')).map(cb => cb.value),
+    key: document.getElementById('sf-key').value.trim(),
     practicedDays: document.getElementById('sf-days').value ? Number(document.getElementById('sf-days').value) : null,
     classIds: [...(state.filterDraftClassIds.sf || [])],
   };
@@ -3230,7 +3239,7 @@ async function applySetFilterFromModal() {
 }
 
 async function clearSetFilter() {
-  state.setFilter = { favoriteOnly: false, types: [], practicedDays: null, classIds: [] };
+  state.setFilter = { favoriteOnly: false, types: [], key: '', practicedDays: null, classIds: [] };
   state.filterDraftClassIds.sf = [];
   closeSetFilter();
   state.sets = await API.getSets();

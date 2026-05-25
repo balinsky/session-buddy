@@ -4,7 +4,6 @@ Maybe someday:
 * Tempo tracking per tune — log your current BPM over time to see progress.
 * Practice session timer — a stopwatch you can run during practice, with optional notes at the end ("still shaky on the B part").
 * Tune difficulty self-rating — beginner / working on / solid, to help prioritize what needs attention.
-* Filter sets by key — since key clashes are a real problem when calling tunes at a session.
 * "Surprise me" — a random set picker, weighted toward sets you haven't played recently.
 * Tune relationships — link variants of the same tune (same tune in two keys, closely related melodies).
 * Setlist builder — a scratch space for planning a gig or session night's running order, separate from your permanent sets.
@@ -18,6 +17,7 @@ Maybe someday:
 * Broader Musician feature: replace the free-text "who" field on tunes with a reference to a musician, capture session-player relationships (a musician can be a teacher in one context and a fellow player in another). Foundation for this lands with Classes Phase 1; the tunes.who replacement and session-player tracking are deferred until after Classes ships.
 
 Already completed:
+* Filter sets by key — Set Filter modal gained a "Contains Tune Key" text field; substring match against any tune in the set, mirrors the tune filter's Key field.
 * In the My Sets tiles, if there is only one tune, make the type singular. Also fix the plural of Waltz (Waltzes) and March (Marches).
 * Practice log: track individual practice/play events (tune, date, type of event — practice vs. session play, optional notes). Show a history of events on the tune detail page and allow filtering/summary by date range.
 * Classes feature: Class + Class Series + Musician entities, M:N tune↔class, set/tune filter by class, CSV import attaches classes to new and existing tunes. (design/Classes.md, 4-phase rollout, commits 6794347 → af6df8b.)
