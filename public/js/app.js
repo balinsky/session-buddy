@@ -173,17 +173,20 @@ function setDisplayName(set) {
   return set.tunes.map(t => t.name).join(' / ');
 }
 
+function pluralizeTuneType(type) {
+  // English: words ending in s, x, z, ch, sh take 'es' (e.g. Waltz → Waltzes, March → Marches)
+  if (/(?:s|x|z|ch|sh)$/i.test(type)) return type + 'es';
+  return type + 's';
+}
+
 function setTypeLabel(set) {
-  const types = [...new Set((set.tunes || []).map(t => t.type).filter(Boolean))];
+  const tunes = set.tunes || [];
+  const types = [...new Set(tunes.map(t => t.type).filter(Boolean))];
   if (types.length === 0) return '';
   if (types.length > 1) return 'Mixed';
   const type = types[0];
-  if (type === 'Slip Jig') return 'Slip Jigs';
-  if (type === 'Hop Jig') return 'Hop Jigs';
-  if (type === '3/2 Tune') return '3/2 Tunes';
-  if (type === '7/8 Tune') return '7/8 Tunes';
-  if (type === 'Air') return 'Airs';
-  return type + 's';
+  if (tunes.length === 1) return type;
+  return pluralizeTuneType(type);
 }
 
 function showError(msg) {
