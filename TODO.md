@@ -18,6 +18,7 @@ Maybe someday:
 * Broader Musician feature: replace the free-text "who" field on tunes with a reference to a musician, capture session-player relationships (a musician can be a teacher in one context and a fellow player in another). Foundation for this lands with Classes Phase 1; the tunes.who replacement and session-player tracking are deferred until after Classes ships.
 
 Already completed:
+* In the My Sets tiles, if there is only one tune, make the type singular. Also fix the plural of Waltz (Waltzes) and March (Marches).
 * Practice log: track individual practice/play events (tune, date, type of event — practice vs. session play, optional notes). Show a history of events on the tune detail page and allow filtering/summary by date range.
 Code improvements (from code-improver review):
 * Extract the shared `col()` CSV column-lookup helper into a single utility module (currently copy-pasted identically into routes/tunes.js, routes/sets.js, and routes/classes.js).
