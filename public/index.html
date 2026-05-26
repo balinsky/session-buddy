@@ -56,6 +56,13 @@
         <div class="search-bar">
           <input id="tune-search" type="search" placeholder="Search tunes..." spellcheck="false" autocorrect="off" />
         </div>
+        <div class="sort-bar">
+          <select id="tune-sort-select" class="sort-select">
+            <option value="default">Sort: Name (A–Z)</option>
+            <option value="tunebooks-desc">Sort: Tunebooks ↓ most first</option>
+            <option value="tunebooks-asc">Sort: Tunebooks ↑ fewest first</option>
+          </select>
+        </div>
         <div id="tune-list" class="item-list"></div>
       </div>
 
@@ -637,6 +644,14 @@
                 <span>Within the last</span>
                 <input type="number" id="ff-days" class="filter-num-input" min="1" placeholder="—" />
                 <span>days</span>
+              </div>
+            </div>
+            <div class="filter-section">
+              <div class="filter-label">Tunebooks</div>
+              <div class="filter-days-row">
+                <span>At least</span>
+                <input type="number" id="ff-min-tunebooks" class="filter-num-input" min="1" placeholder="—" />
+                <span>tunebooks</span>
               </div>
             </div>
             <div class="filter-section">

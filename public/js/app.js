@@ -57,6 +57,7 @@ const state = {
   tuneSearch: '',
   setSearch: '',
   classSearch: '',
+  tuneSort: 'default',
   tuneFilter: {
     favoriteOnly: false,
     statuses: [],
@@ -67,6 +68,7 @@ const state = {
     who: '',
     practicedDays: null,
     classIds: [],
+    minTunebooks: null,
   },
   setFilter: {
     favoriteOnly: false,
@@ -101,10 +103,22 @@ function getSortName(name) {
   return name;
 }
 
+function countTunebooks(tune) {
+  if (!tune.tunebooks) return 0;
+  return tune.tunebooks.split(',').map(s => s.trim()).filter(Boolean).length;
+}
+
 function sortTunes(tunes) {
   return [...tunes].sort((a, b) => {
     const statusDiff = (STATUS_ORDER[bestStatusInfo(a).status] ?? 2) - (STATUS_ORDER[bestStatusInfo(b).status] ?? 2);
     if (statusDiff !== 0) return statusDiff;
+    if (state.tuneSort === 'tunebooks-desc') {
+      const tbDiff = countTunebooks(b) - countTunebooks(a);
+      if (tbDiff !== 0) return tbDiff;
+    } else if (state.tuneSort === 'tunebooks-asc') {
+      const tbDiff = countTunebooks(a) - countTunebooks(b);
+      if (tbDiff !== 0) return tbDiff;
+    }
     return getSortName(a.name).localeCompare(getSortName(b.name));
   });
 }
@@ -204,7 +218,8 @@ function isTuneFilterActive() {
   const f = state.tuneFilter;
   return f.favoriteOnly || f.statuses.length > 0 || f.types.length > 0 ||
     f.key !== '' || f.instruments.length > 0 || f.where !== '' ||
-    f.who !== '' || f.practicedDays !== null || f.classIds.length > 0;
+    f.who !== '' || f.practicedDays !== null || f.classIds.length > 0 ||
+    f.minTunebooks != null;
 }
 
 function isSetFilterActive() {
@@ -289,6 +304,7 @@ function applyTuneFilter(tunes) {
       const ids = t.class_ids || [];
       if (!f.classIds.some(id => ids.includes(id))) return false;
     }
+    if (f.minTunebooks != null && countTunebooks(t) < f.minTunebooks) return false;
     return true;
   });
 }
@@ -3170,6 +3186,7 @@ async function openTuneFilter() {
   document.getElementById('ff-who').value = f.who;
   document.getElementById('ff-who-suggestions').classList.add('hidden');
   document.getElementById('ff-days').value = f.practicedDays != null ? f.practicedDays : '';
+  document.getElementById('ff-min-tunebooks').value = f.minTunebooks != null ? f.minTunebooks : '';
   document.getElementById('ff-class-input').value = '';
   document.getElementById('ff-class-suggestions').classList.add('hidden');
   state.filterDraftClassIds.ff = [...f.classIds];
@@ -3193,13 +3210,14 @@ function applyTuneFilterFromModal() {
     who: document.getElementById('ff-who').value.trim(),
     practicedDays: document.getElementById('ff-days').value ? Number(document.getElementById('ff-days').value) : null,
     classIds: [...(state.filterDraftClassIds.ff || [])],
+    minTunebooks: document.getElementById('ff-min-tunebooks').value ? Number(document.getElementById('ff-min-tunebooks').value) : null,
   };
   closeTuneFilter();
   renderTuneList(state.tunes, state.tuneSearch);
 }
 
 function clearTuneFilter() {
-  state.tuneFilter = { favoriteOnly: false, statuses: [], types: [], key: '', instruments: [], where: '', who: '', practicedDays: null, classIds: [] };
+  state.tuneFilter = { favoriteOnly: false, statuses: [], types: [], key: '', instruments: [], where: '', who: '', practicedDays: null, classIds: [], minTunebooks: null };
   state.filterDraftClassIds.ff = [];
   closeTuneFilter();
   renderTuneList(state.tunes, state.tuneSearch);
@@ -3581,6 +3599,12 @@ function init() {
   document.getElementById('btn-add-tune').addEventListener('click', () => goToTuneForm(null));
   document.getElementById('btn-import').addEventListener('click', goToImport);
   document.getElementById('btn-export-tunes').addEventListener('click', exportTunesCsv);
+
+  // Tune sort
+  document.getElementById('tune-sort-select').addEventListener('change', e => {
+    state.tuneSort = e.target.value;
+    renderTuneList(state.tunes, state.tuneSearch);
+  });
 
   // Tune filter
   document.getElementById('btn-tune-filter').addEventListener('click', openTuneFilter);

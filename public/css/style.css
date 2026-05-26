@@ -246,6 +246,23 @@ html, body {
 
 .search-bar input:focus { border-color: var(--green); }
 
+.sort-bar { margin-bottom: 12px; }
+
+.sort-select {
+  width: 100%;
+  padding: 8px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  font-size: 0.95rem;
+  background: var(--white);
+  color: var(--text);
+  outline: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.sort-select:focus { border-color: var(--green); }
+
 /* ===== ITEM LIST (tunes & sets) ===== */
 .item-list { display: flex; flex-direction: column; gap: 8px; }
 
