@@ -104,8 +104,7 @@ function getSortName(name) {
 }
 
 function countTunebooks(tune) {
-  if (!tune.tunebooks) return 0;
-  return tune.tunebooks.split(',').map(s => s.trim()).filter(Boolean).length;
+  return tune.tunebooks || 0;
 }
 
 function sortTunes(tunes) {

@@ -153,7 +153,7 @@ router.post('/import', upload.single('csv'), async (req, res) => {
         where_learned: col(row, 'Where'),
         who: col(row, 'Who'),
         mnemonic: col(row, 'Mnemonic'),
-        tunebooks: col(row, 'Tunebooks'),
+        tunebooks: parseInt((col(row, 'Tunebooks') || '').replace(/,/g, '')) || null,
         date_learned: col(row, 'Date Learned'),
         favorite: col(row, 'Favorite').toUpperCase() === 'X' ? 1 : 0,
         thesession_id: col(row, 'Thesession ID'),

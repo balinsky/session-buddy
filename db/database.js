@@ -28,7 +28,7 @@ async function init() {
       where_learned TEXT,
       who TEXT,
       mnemonic TEXT,
-      tunebooks TEXT,
+      tunebooks INTEGER,
       date_learned TEXT,
       favorite INTEGER DEFAULT 0,
       thesession_id TEXT,
