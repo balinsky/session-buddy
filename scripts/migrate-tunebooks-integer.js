@@ -21,7 +21,8 @@ async function migrate() {
         ALTER COLUMN tunebooks TYPE INTEGER
         USING CASE
           WHEN tunebooks IS NULL OR tunebooks = '' THEN NULL
-          ELSE REPLACE(tunebooks, ',', '')::INTEGER
+          WHEN REPLACE(tunebooks, ',', '') ~ '^[0-9]+$' THEN REPLACE(tunebooks, ',', '')::INTEGER
+          ELSE NULL
         END
     `);
     console.log('Done: tunebooks column converted to INTEGER.');
