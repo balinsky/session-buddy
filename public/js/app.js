@@ -93,6 +93,9 @@ const state = {
   filterDraftClassSeriesIds: [],
 };
 
+// Tracks the currently swiped-open list card wrapper (only one at a time).
+let openSwipeWrap = null;
+
 // ===== UTILITIES =====
 
 function getSortName(name) {
@@ -119,6 +122,99 @@ function sortTunes(tunes) {
       if (tbDiff !== 0) return tbDiff;
     }
     return getSortName(a.name).localeCompare(getSortName(b.name));
+  });
+}
+
+// ===== SWIPE TO DELETE =====
+
+const SWIPE_DELETE_WIDTH = 80;
+const SWIPE_THRESHOLD = 40;
+
+function closeOpenSwipe() {
+  if (!openSwipeWrap) return;
+  if (openSwipeWrap._swipeClose) openSwipeWrap._swipeClose();
+  openSwipeWrap = null;
+}
+
+function wrapCardWithSwipe(card, onDelete) {
+  const wrap = document.createElement('div');
+  wrap.className = 'swipe-wrap';
+  card.parentNode.insertBefore(wrap, card);
+  wrap.appendChild(card);
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'swipe-delete-btn';
+  delBtn.textContent = 'Delete';
+  delBtn.setAttribute('aria-label', 'Delete');
+  wrap.appendChild(delBtn);
+
+  let startX, startY, dragging = false, isOpen = false;
+
+  wrap._swipeClose = () => {
+    card.style.transition = '';
+    card.style.transform = '';
+    isOpen = false;
+  };
+
+  wrap.addEventListener('touchstart', e => {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    dragging = false;
+    if (openSwipeWrap && openSwipeWrap !== wrap) closeOpenSwipe();
+  }, { passive: true });
+
+  wrap.addEventListener('touchmove', e => {
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (!dragging) {
+      if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+      if (Math.abs(dy) >= Math.abs(dx)) return;
+      dragging = true;
+    }
+    e.preventDefault();
+    const base = isOpen ? -SWIPE_DELETE_WIDTH : 0;
+    const x = Math.max(-SWIPE_DELETE_WIDTH, Math.min(0, base + dx));
+    card.style.transition = 'none';
+    card.style.transform = `translateX(${x}px)`;
+  }, { passive: false });
+
+  wrap.addEventListener('touchend', e => {
+    if (!dragging) {
+      if (isOpen) closeOpenSwipe();
+      return;
+    }
+    dragging = false;
+    const dx = e.changedTouches[0].clientX - startX;
+    const finalX = (isOpen ? -SWIPE_DELETE_WIDTH : 0) + dx;
+    card.style.transition = '';
+    if (finalX < -SWIPE_THRESHOLD) {
+      card.style.transform = `translateX(-${SWIPE_DELETE_WIDTH}px)`;
+      openSwipeWrap = wrap;
+      isOpen = true;
+    } else {
+      card.style.transform = '';
+      if (openSwipeWrap === wrap) openSwipeWrap = null;
+      isOpen = false;
+    }
+  });
+
+  // Stop touch events from bubbling to the wrap so it can't interfere.
+  delBtn.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+  // Act on touchend directly — avoids iOS's 300ms click delay, which causes
+  // the card to slide back over the button before click fires.
+  delBtn.addEventListener('touchend', e => {
+    e.stopPropagation();
+    e.preventDefault(); // suppress the subsequent click
+    openSwipeWrap = null;
+    isOpen = false;
+    onDelete();
+  }, { passive: false });
+  // Fallback for desktop (mouse click, no touchend).
+  delBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    openSwipeWrap = null;
+    isOpen = false;
+    onDelete();
   });
 }
 
@@ -525,6 +621,7 @@ function renderTuneList(tunes, searchQuery) {
       if (e.target.closest('.status-badge.tappable')) return;
       if (e.target.closest('.list-heart-btn')) return;
       if (e.target.closest('.tune-count-btn')) return;
+      if (card.closest('.swipe-wrap') === openSwipeWrap && openSwipeWrap) { closeOpenSwipe(); return; }
       goToTuneDetail(Number(card.dataset.id));
     });
   });
@@ -603,6 +700,21 @@ function renderTuneList(tunes, searchQuery) {
       }
     });
   });
+
+  openSwipeWrap = null;
+  container.querySelectorAll('.list-card').forEach(card => {
+    wrapCardWithSwipe(card, () => deleteTuneFromSwipe(Number(card.dataset.id)));
+  });
+}
+
+async function deleteTuneFromSwipe(tuneId) {
+  try {
+    await API.deleteTune(tuneId);
+    state.tunes = state.tunes.filter(t => t.id !== tuneId);
+    renderTuneList(state.tunes, state.tuneSearch);
+  } catch (e) {
+    showError('Could not delete tune: ' + e.message);
+  }
 }
 
 // ===== TUNE DETAIL VIEW =====
@@ -1446,6 +1558,7 @@ function renderSetList(sets, searchQuery) {
   container.querySelectorAll('.list-card').forEach(card => {
     card.addEventListener('click', (e) => {
       if (e.target.closest('.list-heart-btn')) return;
+      if (card.closest('.swipe-wrap') === openSwipeWrap && openSwipeWrap) { closeOpenSwipe(); return; }
       goToSetDetail(Number(card.dataset.id));
     });
   });
@@ -1468,6 +1581,21 @@ function renderSetList(sets, searchQuery) {
       }
     });
   });
+
+  openSwipeWrap = null;
+  container.querySelectorAll('.list-card').forEach(card => {
+    wrapCardWithSwipe(card, () => deleteSetFromSwipe(Number(card.dataset.id)));
+  });
+}
+
+async function deleteSetFromSwipe(setId) {
+  try {
+    await API.deleteSet(setId);
+    state.sets = state.sets.filter(s => s.id !== setId);
+    renderSetList(state.sets, state.setSearch);
+  } catch (e) {
+    showError('Could not delete set: ' + e.message);
+  }
 }
 
 function renderSetCard(set) {

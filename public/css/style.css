@@ -282,6 +282,43 @@ html, body {
 .list-card.learning { border-left-color: var(--gold); }
 .list-card.not-learned { border-left-color: var(--border); }
 
+/* ===== SWIPE TO DELETE ===== */
+.swipe-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transition: box-shadow 0.15s;
+}
+.swipe-wrap:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+.swipe-wrap .list-card {
+  position: relative;
+  z-index: 1;
+  box-shadow: none;
+  border-radius: 0;
+  transition: box-shadow 0.15s, transform 0.2s ease;
+  touch-action: pan-y;
+}
+.swipe-wrap .list-card:hover { box-shadow: none; }
+.swipe-delete-btn {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 80px;
+  background: #dc3545;
+  color: #fff;
+  border: none;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.swipe-delete-btn:hover { background: #b02a37; }
+
 .tune-card-name {
   font-size: 1.05rem;
   font-weight: 600;
