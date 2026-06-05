@@ -351,7 +351,10 @@ function normalizeApostrophes(s) {
 }
 
 function normalizeForNameMatch(s) {
+  // NFD splits accented chars into base + combining mark; strip the marks so
+  // e.g. "Ridée" matches "Ridee" and "Séan" matches "Sean".
   return normalizeApostrophes(s)
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     // Normalize number variants: "No. 2", "No 2", "Number 2", "#2" → "no 2"
     .replace(/\bno\.?\s*(\d)/g, "no $1")
