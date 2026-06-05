@@ -220,13 +220,13 @@ async function init() {
         name,
         chr(8216), chr(39)), chr(8217), chr(39)), chr(8219), chr(39)),
         chr(700),  chr(39)), chr(699),  chr(39)), chr(180),  chr(39)),
-        chr(65287),chr(39)), chr(96),   chr(39)), chr(712),  chr(39))),
+        chr(65287),chr(39)), chr(96),   chr(39)), chr(712),  chr(39)),
       alternate_titles = CASE WHEN alternate_titles IS NULL THEN NULL ELSE
         REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
           alternate_titles,
           chr(8216), chr(39)), chr(8217), chr(39)), chr(8219), chr(39)),
           chr(700),  chr(39)), chr(699),  chr(39)), chr(180),  chr(39)),
-          chr(65287),chr(39)), chr(96),   chr(39)), chr(712),  chr(39)))
+          chr(65287),chr(39)), chr(96),   chr(39)), chr(712),  chr(39))
       END
   `);
 }
