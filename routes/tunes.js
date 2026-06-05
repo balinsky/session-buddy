@@ -451,6 +451,7 @@ router.post('/import-images', uploadTarball.single('tarball'), async (req, res) 
     }
 
     let imported = 0;
+    let skipped = 0;
     const unmatched = [];
 
     for (const { filename, buffer, mimeType } of files) {
@@ -466,8 +467,8 @@ router.post('/import-images', uploadTarball.single('tarball'), async (req, res) 
           continue;
         }
         const checksum = createHash('sha256').update(buffer).digest('hex');
-        await db.addTuneImage(matchedTune.id, req.user.id, filename, mimeType, buffer, checksum);
-        imported++;
+        const row = await db.addTuneImage(matchedTune.id, req.user.id, filename, mimeType, buffer, checksum);
+        if (row) imported++; else skipped++;
       } else {
         // Multi-title: all parts must match tunes, then find a set containing all of them
         const matchedTuneIds = [];
@@ -492,13 +493,13 @@ router.post('/import-images', uploadTarball.single('tarball'), async (req, res) 
           unmatched.push({ filename, reason: `Matched multiple sets (${setDesc}) — ambiguous` });
         } else {
           const checksum = createHash('sha256').update(buffer).digest('hex');
-          await db.addSetImage(matchingSets[0].id, req.user.id, filename, mimeType, buffer, checksum);
-          imported++;
+          const row = await db.addSetImage(matchingSets[0].id, req.user.id, filename, mimeType, buffer, checksum);
+          if (row) imported++; else skipped++;
         }
       }
     }
 
-    res.json({ imported, unmatched });
+    res.json({ imported, skipped, unmatched });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

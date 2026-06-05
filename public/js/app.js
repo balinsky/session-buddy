@@ -3935,12 +3935,13 @@ function init() {
     try {
       const result = await API.importImages(file);
       const n = result.imported;
+      const s = result.skipped || 0;
       const u = result.unmatched.length;
       imageImportStatus.textContent = '';
       imageImportStatus.className = n > 0 ? 'import-status success' : 'import-status error';
-      imageImportStatus.appendChild(document.createTextNode(
-        `${n} image${n !== 1 ? 's' : ''} imported.`
-      ));
+      let summary = `${n} image${n !== 1 ? 's' : ''} imported.`;
+      if (s > 0) summary += ` ${s} already present, skipped.`;
+      imageImportStatus.appendChild(document.createTextNode(summary));
       if (u > 0) {
         const csvRows = [['filename', 'reason'],
           ...result.unmatched.map(r => [r.filename, r.reason])];
