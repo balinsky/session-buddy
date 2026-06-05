@@ -211,6 +211,24 @@ async function init() {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_practice_log_tune_id ON practice_log(tune_id, user_id)`);
+
+  // Normalize Unicode apostrophe variants to ASCII apostrophe in stored tune names.
+  // chr() avoids quoting issues: 39=', 8216=', 8217=', 8219=‛, 700=ʼ, 699=ʻ, 180=´, 65287=＇, 96=`, 712=ˈ
+  await pool.query(`
+    UPDATE tunes SET
+      name = REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+        name,
+        chr(8216), chr(39)), chr(8217), chr(39)), chr(8219), chr(39)),
+        chr(700),  chr(39)), chr(699),  chr(39)), chr(180),  chr(39)),
+        chr(65287),chr(39)), chr(96),   chr(39)), chr(712),  chr(39))),
+      alternate_titles = CASE WHEN alternate_titles IS NULL THEN NULL ELSE
+        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+          alternate_titles,
+          chr(8216), chr(39)), chr(8217), chr(39)), chr(8219), chr(39)),
+          chr(700),  chr(39)), chr(699),  chr(39)), chr(180),  chr(39)),
+          chr(65287),chr(39)), chr(96),   chr(39)), chr(712),  chr(39)))
+      END
+  `);
 }
 
 // --- Users ---

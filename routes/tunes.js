@@ -140,7 +140,7 @@ router.post('/import', upload.single('csv'), async (req, res) => {
       }
 
       return {
-        name: col(row, 'Name'),
+        name: normalizeApostrophes(col(row, 'Name')),
         type: col(row, 'Type'),
         key: col(row, 'Key'),
         parts: col(row, 'Parts'),
@@ -159,7 +159,7 @@ router.post('/import', upload.single('csv'), async (req, res) => {
         thesession_id: col(row, 'Thesession ID'),
         setting: col(row, 'Setting'),
         notes: col(row, 'Notes'),
-        alternate_titles: col(row, 'Alternate Titles'),
+        alternate_titles: normalizeApostrophes(col(row, 'Alternate Titles')),
         composer: col(row, 'Composer'),
         last_practiced_date: col(row, 'Last Practiced Date'),
         instrument,
@@ -345,9 +345,13 @@ router.post('/import', upload.single('csv'), async (req, res) => {
   }
 });
 
+function normalizeApostrophes(s) {
+  if (!s) return s;
+  return s.replace(/[‘’‛ʼʻ´＇`ˈ]/g, "’");
+}
+
 function normalizeForNameMatch(s) {
-  // Normalize various Unicode apostrophe-like characters to ASCII apostrophe
-  return s.replace(/[‘’‛ʼʻ´＇`ˈ]/g, "’")
+  return normalizeApostrophes(s)
     .toLowerCase()
     // Normalize number variants: "No. 2", "No 2", "Number 2", "#2" → "no 2"
     .replace(/\bno\.?\s*(\d)/g, "no $1")
@@ -510,6 +514,8 @@ router.get('/:id', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
+    req.body.name = normalizeApostrophes(req.body.name);
+    if (req.body.alternate_titles) req.body.alternate_titles = normalizeApostrophes(req.body.alternate_titles);
     const dup = await db.findTuneDup(req.user.id, {
       name: req.body.name,
       type: req.body.type,
@@ -538,6 +544,8 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     if (!req.body.name) return res.status(400).json({ error: 'Tune name is required.' });
+    req.body.name = normalizeApostrophes(req.body.name);
+    if (req.body.alternate_titles) req.body.alternate_titles = normalizeApostrophes(req.body.alternate_titles);
     const dup = await db.findTuneDup(req.user.id, {
       name: req.body.name,
       type: req.body.type,
