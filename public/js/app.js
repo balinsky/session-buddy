@@ -3942,8 +3942,8 @@ function init() {
         `${n} image${n !== 1 ? 's' : ''} imported.`
       ));
       if (u > 0) {
-        const csvRows = [['filename', 'error'],
-          ...result.unmatched.map(r => [r.filename, r.error])];
+        const csvRows = [['filename', 'reason'],
+          ...result.unmatched.map(r => [r.filename, r.reason])];
         const csvText = csvRows.map(row =>
           row.map(f => `"${f.replace(/"/g, '""')}"`).join(',')
         ).join('\n');
