@@ -765,7 +765,7 @@ async function getTuneImagesAll(tuneId, userId) {
     `SELECT 'tune' AS source, id, tune_id AS source_id, filename, mime_type, created_at
      FROM tune_images
      WHERE tune_id = $1 AND user_id = $2
-     UNION ALL
+     UNION
      SELECT 'set' AS source, si.id, si.set_id AS source_id, si.filename, si.mime_type, si.created_at
      FROM set_images si
      JOIN set_tunes st ON st.set_id = si.set_id
