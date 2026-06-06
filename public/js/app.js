@@ -1491,6 +1491,7 @@ async function saveTuneForm(e) {
     } else {
       const tune = await API.createTune(data);
       state.tunes = await API.getTunes();
+      state.backStack = state.backStack.filter(v => v !== 'tune-form');
       await goToTuneDetail(tune.id);
     }
   } catch (e) {
@@ -2026,6 +2027,7 @@ async function saveSet() {
       await goToSets();
     } else {
       const set = await API.createSet(state.selectedTuneIds);
+      state.backStack = state.backStack.filter(v => v !== 'set-form');
       await goToSetDetail(set.id);
     }
   } catch (e) {
@@ -2577,6 +2579,8 @@ async function saveClassForm(e) {
     } else {
       klass = await API.createClass(data);
     }
+    state.backStack = state.backStack.filter(v => v !== 'class-form');
+    if (state.backStack[state.backStack.length - 1] === 'class-detail') state.backStack.pop();
     await goToClassDetail(klass.id);
   } catch (err) {
     showError('Could not save class: ' + err.message);
@@ -2729,6 +2733,8 @@ async function saveSeriesForm(e) {
     } else {
       series = await API.createClassSeries(data);
     }
+    state.backStack = state.backStack.filter(v => v !== 'series-form');
+    if (state.backStack[state.backStack.length - 1] === 'series-detail') state.backStack.pop();
     await goToSeriesDetail(series.id);
   } catch (err) {
     showError('Could not save series: ' + err.message);
@@ -4354,6 +4360,8 @@ async function saveSetlistForm() {
     } else {
       sl = await API.createSetlist(data);
     }
+    state.backStack = state.backStack.filter(v => v !== 'setlist-form');
+    if (state.backStack[state.backStack.length - 1] === 'setlist-detail') state.backStack.pop();
     goToSetlistDetail(sl.id);
   } catch (e) {
     showError('Could not save setlist: ' + e.message);
