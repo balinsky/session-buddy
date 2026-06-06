@@ -3964,6 +3964,9 @@ function init() {
     }
   });
 
+  // Clear buttons for all search inputs
+  initSearchClearButtons();
+
   // Sync modal
   document.getElementById('btn-close-sync-modal').addEventListener('click', closeSyncModal);
   document.getElementById('modal-sync').querySelector('.modal-backdrop').addEventListener('click', closeSyncModal);
@@ -3974,6 +3977,31 @@ function init() {
       showView('welcome', false);
       document.getElementById('header-title').textContent = 'Session Buddy';
     }
+  });
+}
+
+function initSearchClearButtons() {
+  document.querySelectorAll('input[type="search"]').forEach(input => {
+    const wrap = document.createElement('div');
+    wrap.className = 'search-wrap';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'search-clear-btn hidden';
+    btn.setAttribute('aria-label', 'Clear search');
+    btn.textContent = '✕';
+    wrap.appendChild(btn);
+
+    const sync = () => btn.classList.toggle('hidden', !input.value);
+    input.addEventListener('input', sync);
+    btn.addEventListener('click', () => {
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+    });
+    sync();
   });
 }
 

@@ -254,6 +254,43 @@ html, body {
 
 .search-bar input:focus { border-color: var(--green); }
 
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.search-wrap input {
+  flex: 1;
+  min-width: 0;
+  padding-right: 36px;
+}
+.search-clear-btn {
+  position: absolute;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #b0b0b0;
+  color: #fff;
+  border: none;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.search-clear-btn:hover { background: #888; }
+.search-clear-btn.hidden { display: none; }
+
 .sort-bar { margin-bottom: 12px; }
 
 .sort-select {
