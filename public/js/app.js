@@ -1327,7 +1327,8 @@ function renderTuneFormClassChips() {
 
 function renderTuneFormClassSuggestions(query) {
   const list = document.getElementById('f-class-suggestions');
-  const q = (query || '').trim().toLowerCase();
+  const rawQ = (query || '').trim();
+  const q = rawQ.toLowerCase();
   if (!q) { hideTuneFormClassSuggestions(); return; }
   const all = state.tuneFormAllClasses || [];
   const taken = new Set(state.tuneFormClassIds || []);
@@ -1337,15 +1338,15 @@ function renderTuneFormClassSuggestions(query) {
     if (c.series && c.series.name.toLowerCase().includes(q)) return true;
     return false;
   }).slice(0, 8);
-  if (matches.length === 0) {
-    list.innerHTML = `<div class="typeahead-item typeahead-create" style="cursor:default">No matching classes — create one in the Classes tab first.</div>`;
-  } else {
-    list.innerHTML = matches.map(c => {
-      const sub = c.series ? c.series.name : '';
-      return `<div class="typeahead-item" data-id="${c.id}">${esc(c.name)}${sub ? ` <span class="hint">— ${esc(sub)}</span>` : ''}</div>`;
-    }).join('');
-  }
+
+  const matchItems = matches.map(c => {
+    const sub = c.series ? c.series.name : '';
+    return `<div class="typeahead-item" data-id="${c.id}">${esc(c.name)}${sub ? ` <span class="hint">— ${esc(sub)}</span>` : ''}</div>`;
+  }).join('');
+  const createItem = `<div class="typeahead-item typeahead-create" data-create="${esc(rawQ)}">＋ Create "${esc(rawQ)}"</div>`;
+  list.innerHTML = matchItems + createItem;
   list.classList.remove('hidden');
+
   list.querySelectorAll('[data-id]').forEach(item => {
     item.addEventListener('click', () => {
       const id = Number(item.dataset.id);
@@ -1354,6 +1355,20 @@ function renderTuneFormClassSuggestions(query) {
       hideTuneFormClassSuggestions();
       renderTuneFormClassChips();
     });
+  });
+
+  list.querySelector('[data-create]').addEventListener('click', async () => {
+    const name = rawQ;
+    try {
+      const created = await API.createClass({ name });
+      state.tuneFormAllClasses.push(created);
+      if (!state.tuneFormClassIds.includes(created.id)) state.tuneFormClassIds.push(created.id);
+      document.getElementById('f-class-input').value = '';
+      hideTuneFormClassSuggestions();
+      renderTuneFormClassChips();
+    } catch (e) {
+      showError('Could not create class: ' + e.message);
+    }
   });
 }
 
