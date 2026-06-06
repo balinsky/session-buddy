@@ -3613,6 +3613,7 @@ function init() {
       else if (dest === 'sets') goToSets();
       else if (dest === 'classes') goToClasses();
       else if (dest === 'musicians') goToMusicians();
+      else if (dest === 'setlists') goToSetlists();
     });
   });
 
@@ -3620,7 +3621,6 @@ function init() {
   document.getElementById('nav-tunes').addEventListener('click', goToTunes);
   document.getElementById('nav-sets').addEventListener('click', goToSets);
   document.getElementById('nav-classes').addEventListener('click', goToClasses);
-  document.getElementById('nav-setlists').addEventListener('click', goToSetlists);
 
   document.getElementById('btn-add-setlist').addEventListener('click', () => goToSetlistForm(null));
   document.getElementById('btn-save-setlist').addEventListener('click', saveSetlistForm);
