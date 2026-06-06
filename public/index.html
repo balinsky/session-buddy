@@ -767,6 +767,60 @@
         <div id="musician-list"></div>
       </div>
 
+      <!-- ===== SETLISTS ===== -->
+      <div id="view-setlists" class="view">
+        <div class="view-content">
+          <div class="list-header" style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+            <button id="btn-add-setlist" class="btn btn-small btn-primary">+ New Setlist</button>
+          </div>
+          <div id="setlist-list" class="item-list"></div>
+        </div>
+      </div>
+
+      <div id="view-setlist-detail" class="view">
+        <div class="view-content" id="setlist-detail-content"></div>
+      </div>
+
+      <div id="view-setlist-form" class="view">
+        <div class="view-content">
+          <div class="form-group">
+            <label for="slf-name">Name</label>
+            <input id="slf-name" type="text" placeholder="e.g. Kilkenny Session" autocomplete="off" />
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="slf-date">Date</label>
+              <input id="slf-date" type="date" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="slf-notes">Notes</label>
+            <textarea id="slf-notes" rows="2"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>Running order</label>
+            <div id="slf-items" class="setlist-drag-list"></div>
+          </div>
+
+          <div class="form-group">
+            <div class="slf-tabs">
+              <button class="slf-tab active" data-tab="tune">Add Tune</button>
+              <button class="slf-tab" data-tab="set">Add Set</button>
+            </div>
+            <div class="search-bar" style="margin-top:8px;">
+              <input id="slf-search" type="search" placeholder="Search…" autocomplete="off" />
+            </div>
+            <div id="slf-search-results" class="item-list pickable" style="max-height:220px;overflow-y:auto;"></div>
+          </div>
+
+          <div class="form-actions">
+            <button id="btn-save-setlist" class="btn btn-primary btn-large">Save</button>
+            <button id="btn-cancel-setlist-form" class="btn btn-outline btn-large">Cancel</button>
+          </div>
+        </div>
+      </div>
+
     </main>
 
     <!-- ===== BOTTOM NAV ===== -->
@@ -782,6 +836,10 @@
       <button id="nav-classes" class="nav-btn" data-view="classes">
         <span class="nav-icon">&#127891;</span>
         <span class="nav-label">Classes</span>
+      </button>
+      <button id="nav-setlists" class="nav-btn" data-view="setlists">
+        <span class="nav-icon">&#128203;</span>
+        <span class="nav-label">Setlists</span>
       </button>
     </nav>
 

@@ -131,5 +131,12 @@ const API = (() => {
     createMusician: (data) => request('POST', '/api/musicians', data),
     updateMusician: (id, data) => request('PUT', `/api/musicians/${id}`, data),
     deleteMusician: (id) => request('DELETE', `/api/musicians/${id}`),
+
+    // Setlists
+    getSetlists: () => request('GET', '/api/setlists'),
+    getSetlist: (id) => request('GET', `/api/setlists/${id}`),
+    createSetlist: (data) => request('POST', '/api/setlists', data),
+    updateSetlist: (id, data) => request('PUT', `/api/setlists/${id}`, data),
+    deleteSetlist: (id) => request('DELETE', `/api/setlists/${id}`),
   };
 })();

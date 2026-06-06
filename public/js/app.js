@@ -49,6 +49,10 @@ const state = {
   classes: [],
   editingTune: null,
   editingSet: null,
+  setlists: [],
+  editingSetlist: null,
+  setlistFormItems: [],
+  setlistFormTab: 'tune',
   tuneFormWhoMusicianId: null,
   tuneFormWhoText: '',
   tuneFormAllMusicians: [],
@@ -451,6 +455,7 @@ const NAV_SECTION = {
   'musician-detail': 'classes', 'musician-form': 'classes',
   'class-import': 'classes',
   musicians: null,
+  setlists: 'setlists', 'setlist-detail': 'setlists', 'setlist-form': 'setlists',
 };
 
 function showView(viewId, pushToHistory = true) {
@@ -460,7 +465,7 @@ function showView(viewId, pushToHistory = true) {
   // Nav is always visible except on the welcome screen
   document.getElementById('bottom-nav').classList.toggle('hidden', viewId === 'welcome');
 
-  const showBack = viewId !== 'welcome' && viewId !== 'tunes' && viewId !== 'sets' && viewId !== 'classes' && viewId !== 'musicians';
+  const showBack = viewId !== 'welcome' && viewId !== 'tunes' && viewId !== 'sets' && viewId !== 'classes' && viewId !== 'musicians' && viewId !== 'setlists';
   document.getElementById('back-btn').classList.toggle('hidden', !showBack);
   document.getElementById('hamburger-btn').classList.toggle('hidden', showBack || viewId === 'welcome');
 
@@ -487,6 +492,8 @@ const VIEW_TITLES = {
   'series-detail': 'Series Detail',
   'musician-detail': 'Musician',
   'class-import': 'Import Classes CSV',
+  'setlist-detail': 'Setlist',
+  'setlist-form': 'Setlist',
 };
 
 function goBack() {
@@ -501,6 +508,8 @@ function goBack() {
     goToClasses();
   } else if (prev === 'musicians') {
     goToMusicians();
+  } else if (prev === 'setlists') {
+    goToSetlists();
   } else {
     showView(prev, false);
     if (VIEW_TITLES[prev]) {
@@ -3605,6 +3614,17 @@ function init() {
   document.getElementById('nav-tunes').addEventListener('click', goToTunes);
   document.getElementById('nav-sets').addEventListener('click', goToSets);
   document.getElementById('nav-classes').addEventListener('click', goToClasses);
+  document.getElementById('nav-setlists').addEventListener('click', goToSetlists);
+
+  document.getElementById('btn-add-setlist').addEventListener('click', () => goToSetlistForm(null));
+  document.getElementById('btn-save-setlist').addEventListener('click', saveSetlistForm);
+  document.getElementById('btn-cancel-setlist-form').addEventListener('click', () => {
+    state.backStack.pop();
+    goToSetlists();
+  });
+  document.getElementById('slf-search').addEventListener('input', e => {
+    renderSetlistFormSearch(e.target.value);
+  });
 
   // Class filter
   document.getElementById('btn-class-filter').addEventListener('click', openClassFilter);
@@ -3993,6 +4013,351 @@ function init() {
       document.getElementById('header-title').textContent = 'Session Buddy';
     }
   });
+}
+
+// ===== SETLISTS =====
+
+async function goToSetlists() {
+  showView('setlists', false);
+  document.getElementById('header-title').textContent = 'Setlists';
+  try {
+    state.setlists = await API.getSetlists();
+    renderSetlistList(state.setlists);
+  } catch (e) {
+    showError('Could not load setlists: ' + e.message);
+  }
+}
+
+function renderSetlistList(setlists) {
+  const container = document.getElementById('setlist-list');
+  if (!setlists.length) {
+    container.innerHTML = '<div class="empty-state">No setlists yet. Tap + New Setlist to create one.</div>';
+    return;
+  }
+  container.innerHTML = setlists.map(sl => {
+    const dateStr = sl.date ? new Date(sl.date + 'T00:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+    const meta = [dateStr, sl.item_count + ' item' + (sl.item_count !== 1 ? 's' : '')].filter(Boolean).join(' · ');
+    return `<div class="setlist-card" data-id="${sl.id}">
+      <div>
+        <div class="setlist-card-name">${esc(sl.name)}</div>
+        <div class="setlist-card-meta">${esc(meta)}</div>
+      </div>
+      <span style="color:var(--muted)">›</span>
+    </div>`;
+  }).join('');
+  container.querySelectorAll('.setlist-card').forEach(card => {
+    card.addEventListener('click', () => goToSetlistDetail(Number(card.dataset.id)));
+  });
+}
+
+async function goToSetlistDetail(id) {
+  try {
+    const sl = await API.getSetlist(id);
+    showView('setlist-detail');
+    document.getElementById('header-title').textContent = sl.name;
+    renderSetlistDetail(sl);
+  } catch (e) {
+    showError('Could not load setlist: ' + e.message);
+  }
+}
+
+function setlistItemLabel(item) {
+  if (item.item_type === 'tune') {
+    return item.tune ? esc(item.tune.name) : '(deleted tune)';
+  }
+  if (item.set && item.set.tunes && item.set.tunes.length) {
+    return item.set.tunes.map(t => esc(t.name)).join(' / ');
+  }
+  return '(deleted set)';
+}
+
+function renderSetlistDetail(sl, expanded = false) {
+  const dateStr = sl.date ? new Date(sl.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) : '';
+  const hasItems = sl.items && sl.items.length > 0;
+  let html = `<div class="detail-header">
+    <div class="detail-title-row">
+      <div class="detail-title">${esc(sl.name)}</div>
+    </div>
+    ${dateStr ? `<div class="hint" style="margin-top:4px;">${esc(dateStr)}</div>` : ''}
+    <div class="detail-actions" style="margin-top:8px;">
+      <button class="btn btn-outline btn-small" id="btn-edit-setlist">Edit</button>
+      <button class="btn btn-danger btn-small" id="btn-delete-setlist">Delete</button>
+      ${hasItems ? `<button class="btn btn-outline btn-small" id="btn-expand-setlist">${expanded ? 'Collapse' : 'Expand'}</button>` : ''}
+    </div>
+  </div>`;
+
+  if (sl.notes) {
+    html += `<div class="detail-card"><div class="detail-card-title">Notes</div><div>${esc(sl.notes)}</div></div>`;
+  }
+
+  if (!hasItems) {
+    html += `<div class="empty-state" style="margin-top:16px;">No items yet.</div>`;
+  } else if (expanded) {
+    // Expanded tile view with incipit notation
+    sl.items.forEach((item, i) => {
+      const pos = i + 1;
+      if (item.item_type === 'tune' && item.tune) {
+        const t = item.tune;
+        const sub = [t.type, t.key].filter(Boolean).join(' · ');
+        const incipitId = `sl-incipit-${item.id}-a`;
+        html += `<div class="setlist-tile" data-item-type="tune" data-target-id="${t.id}">
+          <div class="setlist-tile-pos">${pos}.</div>
+          <div class="setlist-tile-body">
+            <div class="setlist-tile-name">${esc(t.name)}</div>
+            ${sub ? `<div class="setlist-tile-sub">${esc(sub)}</div>` : ''}
+            ${t.incipit_a ? `<div class="setlist-tile-incipit" id="${incipitId}"></div>` : ''}
+          </div>
+        </div>`;
+      } else if (item.item_type === 'set' && item.set) {
+        const tunes = item.set.tunes || [];
+        let tunesHtml = tunes.map(t => {
+          const sub = [t.type, t.key].filter(Boolean).join(' · ');
+          const incipitId = `sl-incipit-${item.id}-${t.tune_id}`;
+          return `<div class="setlist-tile-set-tune" data-item-type="tune" data-target-id="${t.tune_id}">
+            <div class="setlist-tile-name">${esc(t.name)}</div>
+            ${sub ? `<div class="setlist-tile-sub">${esc(sub)}</div>` : ''}
+            ${t.incipit_a ? `<div class="setlist-tile-incipit" id="${incipitId}"></div>` : ''}
+          </div>`;
+        }).join('');
+        html += `<div class="setlist-tile setlist-tile-set" data-item-type="set" data-target-id="${item.set.id}">
+          <div class="setlist-tile-pos">${pos}.</div>
+          <div class="setlist-tile-body">${tunesHtml}</div>
+        </div>`;
+      } else {
+        html += `<div class="setlist-tile setlist-tile-deleted"><div class="setlist-tile-pos">${pos}.</div><div class="setlist-tile-body hint">(deleted)</div></div>`;
+      }
+    });
+  } else {
+    // Compact list view
+    html += `<div class="detail-card"><div class="detail-card-title">Running Order</div>`;
+    sl.items.forEach((item, i) => {
+      const badge = item.item_type === 'set' ? '<span class="setlist-item-type-badge">set</span>' : '';
+      let sub = '';
+      if (item.item_type === 'tune' && item.tune) {
+        sub = [item.tune.type, item.tune.key].filter(Boolean).join(' · ');
+      }
+      const targetType = item.item_type;
+      const targetId = item.item_type === 'tune' ? item.tune_id : item.set_id;
+      html += `<div class="setlist-detail-item" data-item-type="${targetType}" data-target-id="${targetId}" style="cursor:pointer;">
+        <div class="setlist-detail-pos">${i + 1}.</div>
+        <div class="setlist-detail-label">
+          <div class="setlist-detail-name">${setlistItemLabel(item)} ${badge}</div>
+          ${sub ? `<div class="setlist-detail-sub">${esc(sub)}</div>` : ''}
+        </div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  const container = document.getElementById('setlist-detail-content');
+  container.innerHTML = html;
+
+  // Render incipits after DOM is ready
+  if (expanded) {
+    sl.items.forEach(item => {
+      if (item.item_type === 'tune' && item.tune && item.tune.incipit_a) {
+        renderAbcInto(`sl-incipit-${item.id}-a`, item.tune.incipit_a, item.tune.type, item.tune.key);
+      } else if (item.item_type === 'set' && item.set) {
+        (item.set.tunes || []).forEach(t => {
+          if (t.incipit_a) renderAbcInto(`sl-incipit-${item.id}-${t.tune_id}`, t.incipit_a, t.type, t.key);
+        });
+      }
+    });
+  }
+
+  // Navigation clicks on items
+  container.querySelectorAll('[data-item-type][data-target-id]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      e.stopPropagation();
+      const type = el.dataset.itemType;
+      const id = Number(el.dataset.targetId);
+      if (!id) return;
+      if (type === 'tune') goToTuneDetail(id);
+      else if (type === 'set') goToSetDetail(id);
+    });
+  });
+
+  container.querySelector('#btn-edit-setlist').addEventListener('click', () => goToSetlistForm(sl));
+  container.querySelector('#btn-delete-setlist').addEventListener('click', async () => {
+    if (!confirm(`Delete "${sl.name}"?`)) return;
+    try {
+      await API.deleteSetlist(sl.id);
+      goToSetlists();
+    } catch (e) {
+      showError('Could not delete: ' + e.message);
+    }
+  });
+  const btnExpand = container.querySelector('#btn-expand-setlist');
+  if (btnExpand) btnExpand.addEventListener('click', () => renderSetlistDetail(sl, !expanded));
+}
+
+async function goToSetlistForm(sl = null) {
+  state.editingSetlist = sl;
+  state.setlistFormTab = 'tune';
+  if (sl) {
+    state.setlistFormItems = (sl.items || []).map(item => ({
+      type: item.item_type,
+      id: item.item_type === 'tune' ? item.tune_id : item.set_id,
+      label: setlistItemLabel(item),
+    }));
+  } else {
+    state.setlistFormItems = [];
+  }
+
+  showView('setlist-form');
+  document.getElementById('header-title').textContent = sl ? 'Edit Setlist' : 'New Setlist';
+  document.getElementById('slf-name').value = sl ? sl.name : '';
+  document.getElementById('slf-date').value = sl && sl.date ? sl.date : '';
+  document.getElementById('slf-notes').value = sl ? (sl.notes || '') : '';
+
+  if (state.tunes.length === 0) state.tunes = await API.getTunes();
+  if (state.sets.length === 0) state.sets = await API.getSets();
+
+  renderSetlistFormItems();
+  renderSetlistFormSearch('');
+
+  document.querySelectorAll('.slf-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      state.setlistFormTab = tab.dataset.tab;
+      document.querySelectorAll('.slf-tab').forEach(t => t.classList.toggle('active', t === tab));
+      renderSetlistFormSearch(document.getElementById('slf-search').value);
+    });
+  });
+}
+
+function renderSetlistFormItems() {
+  const container = document.getElementById('slf-items');
+  if (!state.setlistFormItems.length) {
+    container.innerHTML = '<div class="hint" style="padding:8px 0;">No items yet — search below to add.</div>';
+    return;
+  }
+  container.innerHTML = state.setlistFormItems.map((item, i) => `
+    <div class="setlist-drag-item" data-index="${i}" data-type="${item.type}" data-id="${item.id}">
+      <span class="drag-handle" title="Drag to reorder">⠿</span>
+      <span class="setlist-item-label">${item.label}</span>
+      ${item.type === 'set' ? '<span class="setlist-item-type-badge">set</span>' : ''}
+      <button type="button" class="btn btn-danger btn-small slf-remove-btn" data-index="${i}" style="padding:2px 8px;">✕</button>
+    </div>`).join('');
+
+  container.querySelectorAll('.slf-remove-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.setlistFormItems.splice(Number(btn.dataset.index), 1);
+      renderSetlistFormItems();
+    });
+  });
+
+  initSetlistDrag(container);
+}
+
+function renderSetlistFormSearch(query) {
+  const container = document.getElementById('slf-search-results');
+  const q = (query || '').toLowerCase().trim();
+  const takenKeys = new Set(state.setlistFormItems.map(i => i.type + ':' + i.id));
+
+  if (state.setlistFormTab === 'tune') {
+    const matches = state.tunes
+      .filter(t => !takenKeys.has('tune:' + t.id) && (!q || t.name.toLowerCase().includes(q)))
+      .slice(0, 20);
+    container.innerHTML = matches.length
+      ? matches.map(t => `<div class="list-card pickable-item" data-type="tune" data-id="${t.id}" data-label="${esc(t.name)}">
+          <span>${esc(t.name)}</span>
+          <span class="hint">${esc([t.type, t.key].filter(Boolean).join(' · '))}</span>
+        </div>`).join('')
+      : `<div class="hint" style="padding:10px;">No tunes found.</div>`;
+  } else {
+    const matches = state.sets
+      .filter(s => {
+        if (takenKeys.has('set:' + s.id)) return false;
+        const name = (s.tunes || []).map(t => t.name).join(' ');
+        return !q || name.toLowerCase().includes(q);
+      })
+      .slice(0, 20);
+    const label = s => (s.tunes || []).map(t => t.name).join(' / ') || '(empty set)';
+    container.innerHTML = matches.length
+      ? matches.map(s => `<div class="list-card pickable-item" data-type="set" data-id="${s.id}" data-label="${esc(label(s))}">
+          <span>${esc(label(s))}</span>
+        </div>`).join('')
+      : `<div class="hint" style="padding:10px;">No sets found.</div>`;
+  }
+
+  container.querySelectorAll('.pickable-item').forEach(item => {
+    item.addEventListener('click', () => {
+      state.setlistFormItems.push({ type: item.dataset.type, id: Number(item.dataset.id), label: item.dataset.label });
+      renderSetlistFormItems();
+      renderSetlistFormSearch(document.getElementById('slf-search').value);
+    });
+  });
+}
+
+function initSetlistDrag(container) {
+  let dragging = null;
+
+  container.addEventListener('pointerdown', e => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    const item = handle.closest('.setlist-drag-item');
+    if (!item) return;
+    e.preventDefault();
+    dragging = item;
+    item.classList.add('dragging');
+    handle.setPointerCapture(e.pointerId);
+  });
+
+  container.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    e.preventDefault();
+    const items = [...container.querySelectorAll('.setlist-drag-item:not(.dragging)')];
+    let inserted = false;
+    for (const other of items) {
+      const r = other.getBoundingClientRect();
+      if (e.clientY < r.top + r.height / 2) {
+        other.before(dragging);
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted && items.length) items[items.length - 1].after(dragging);
+  });
+
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging.classList.remove('dragging');
+    // Sync state from DOM order
+    const newItems = [...container.querySelectorAll('.setlist-drag-item')].map(el => ({
+      type: el.dataset.type,
+      id: Number(el.dataset.id),
+      label: el.querySelector('.setlist-item-label').textContent,
+    }));
+    state.setlistFormItems = newItems;
+    dragging = null;
+    renderSetlistFormItems();
+  };
+
+  container.addEventListener('pointerup', endDrag);
+  container.addEventListener('pointercancel', endDrag);
+}
+
+async function saveSetlistForm() {
+  const name = document.getElementById('slf-name').value.trim();
+  if (!name) { showError('Setlist name is required.'); return; }
+  const data = {
+    name,
+    date: document.getElementById('slf-date').value || null,
+    notes: document.getElementById('slf-notes').value.trim() || null,
+    items: state.setlistFormItems.map(i => ({ type: i.type, id: i.id })),
+  };
+  try {
+    let sl;
+    if (state.editingSetlist) {
+      sl = await API.updateSetlist(state.editingSetlist.id, data);
+    } else {
+      sl = await API.createSetlist(data);
+    }
+    goToSetlistDetail(sl.id);
+  } catch (e) {
+    showError('Could not save setlist: ' + e.message);
+  }
 }
 
 function initSearchClearButtons() {

@@ -14,6 +14,7 @@ app.use('/api/sets', require('./routes/sets'));
 // Classes router owns both /api/classes/* and /api/class-series/*
 app.use('/api', require('./routes/classes'));
 app.use('/api/musicians', require('./routes/musicians'));
+app.use('/api/setlists', require('./routes/setlists'));
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

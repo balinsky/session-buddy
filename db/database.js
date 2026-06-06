@@ -212,6 +212,31 @@ async function init() {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_practice_log_tune_id ON practice_log(tune_id, user_id)`);
 
+  // Setlists — named running-order lists for gigs / session nights.
+  // Items can reference either a tune or an existing set.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS setlists (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      date TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS setlist_items (
+      id SERIAL PRIMARY KEY,
+      setlist_id INTEGER NOT NULL REFERENCES setlists(id) ON DELETE CASCADE,
+      item_type TEXT NOT NULL CHECK (item_type IN ('tune', 'set')),
+      tune_id INTEGER REFERENCES tunes(id) ON DELETE CASCADE,
+      set_id  INTEGER REFERENCES sets(id)  ON DELETE CASCADE,
+      position INTEGER NOT NULL
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_setlists_user_id ON setlists(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_setlist_items_setlist_id ON setlist_items(setlist_id)`);
+
   // Normalize Unicode apostrophe variants to ASCII apostrophe in stored tune names.
   // chr() avoids quoting issues: 39=', 8216=', 8217=', 8219=‛, 700=ʼ, 699=ʻ, 180=´, 65287=＇, 96=`, 712=ˈ
   await pool.query(`
@@ -1401,6 +1426,126 @@ async function deletePracticeLogEntry(id, tuneId, userId) {
   );
 }
 
+// --- Setlists ---
+
+async function getSetlistsByUser(userId) {
+  const { rows } = await pool.query(
+    `SELECT sl.id, sl.name, sl.date, sl.notes, sl.created_at,
+            COUNT(si.id)::int AS item_count
+     FROM setlists sl
+     LEFT JOIN setlist_items si ON si.setlist_id = sl.id
+     WHERE sl.user_id = $1
+     GROUP BY sl.id
+     ORDER BY sl.created_at DESC`,
+    [userId]
+  );
+  return rows;
+}
+
+async function getSetlistById(id, userId) {
+  const { rows: [sl] } = await pool.query(
+    'SELECT * FROM setlists WHERE id = $1 AND user_id = $2',
+    [id, userId]
+  );
+  if (!sl) return null;
+
+  const { rows: items } = await pool.query(
+    `SELECT id, item_type, tune_id, set_id, position
+     FROM setlist_items WHERE setlist_id = $1 ORDER BY position`,
+    [id]
+  );
+
+  const tuneIds = [...new Set(items.filter(i => i.item_type === 'tune' && i.tune_id).map(i => i.tune_id))];
+  const setIds  = [...new Set(items.filter(i => i.item_type === 'set'  && i.set_id ).map(i => i.set_id ))];
+
+  const tunesMap = new Map();
+  const setsMap  = new Map();
+
+  if (tuneIds.length) {
+    const { rows } = await pool.query(
+      'SELECT id, name, type, key, incipit_a FROM tunes WHERE id = ANY($1) AND user_id = $2',
+      [tuneIds, userId]
+    );
+    rows.forEach(t => tunesMap.set(t.id, t));
+  }
+  if (setIds.length) {
+    const { rows } = await pool.query(
+      `SELECT st.set_id, t.id AS tune_id, t.name, t.type, t.key, t.incipit_a, st.position
+       FROM set_tunes st JOIN tunes t ON t.id = st.tune_id
+       WHERE st.set_id = ANY($1) ORDER BY st.set_id, st.position`,
+      [setIds]
+    );
+    setIds.forEach(sid => {
+      setsMap.set(sid, { id: sid, tunes: rows.filter(r => r.set_id === sid) });
+    });
+  }
+
+  sl.items = items.map(item => ({
+    ...item,
+    tune: item.item_type === 'tune' ? (tunesMap.get(item.tune_id) || null) : null,
+    set:  item.item_type === 'set'  ? (setsMap.get(item.set_id)   || null) : null,
+  }));
+
+  return sl;
+}
+
+async function _insertSetlistItems(client, setlistId, items) {
+  for (let i = 0; i < items.length; i++) {
+    const { type, id: itemId } = items[i];
+    await client.query(
+      `INSERT INTO setlist_items (setlist_id, item_type, tune_id, set_id, position)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [setlistId, type, type === 'tune' ? itemId : null, type === 'set' ? itemId : null, i + 1]
+    );
+  }
+}
+
+async function createSetlist(userId, data) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [sl] } = await client.query(
+      `INSERT INTO setlists (user_id, name, date, notes)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [userId, data.name, data.date || null, data.notes || null]
+    );
+    await _insertSetlistItems(client, sl.id, data.items || []);
+    await client.query('COMMIT');
+    return sl;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function updateSetlist(id, userId, data) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [sl] } = await client.query(
+      `UPDATE setlists SET name=$1, date=$2, notes=$3
+       WHERE id=$4 AND user_id=$5 RETURNING *`,
+      [data.name, data.date || null, data.notes || null, id, userId]
+    );
+    if (!sl) { await client.query('ROLLBACK'); return null; }
+    await client.query('DELETE FROM setlist_items WHERE setlist_id = $1', [id]);
+    await _insertSetlistItems(client, id, data.items || []);
+    await client.query('COMMIT');
+    return sl;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function deleteSetlist(id, userId) {
+  await pool.query('DELETE FROM setlists WHERE id = $1 AND user_id = $2', [id, userId]);
+}
+
 module.exports = {
   init,
   getUserBySyncCode, createUser,
@@ -1418,4 +1563,5 @@ module.exports = {
   getClassSeriesByUser, getClassSeriesById, createClassSeries, updateClassSeries, deleteClassSeries,
   getMusiciansByUser, getMusicianById, createMusician, updateMusician, deleteMusician,
   getPracticeLog, addPracticeLogEntry, deletePracticeLogEntry,
+  getSetlistsByUser, getSetlistById, createSetlist, updateSetlist, deleteSetlist,
 };
