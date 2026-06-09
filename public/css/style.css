@@ -1034,6 +1034,28 @@ input[type="search"]::-webkit-search-cancel-button {
 
 .import-undo-section { margin-top: 10px; text-align: center; }
 
+#btn-ts-fetch { margin-top: 6px; }
+#ts-fetch-panel { margin-top: 10px; }
+#ts-settings-list { margin: 8px 0; }
+#btn-ts-apply { margin-top: 4px; width: 100%; }
+.ts-setting-card {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.ts-setting-card.selected {
+  border-color: var(--green);
+  background: var(--green-light);
+}
+.ts-setting-key {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+
 .duplicate-group {
   margin-bottom: 10px;
   padding: 10px 12px;

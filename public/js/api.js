@@ -73,6 +73,7 @@ const API = (() => {
       return request('POST', `/api/sets/${id}/image`, form, true);
     },
     deleteSetImage: (setId, imageId) => request('DELETE', `/api/sets/${setId}/image/${imageId}`),
+    fetchFromThesession: (id) => request('GET', `/api/tunes/thesession-fetch/${encodeURIComponent(id)}`),
     importImages: (file) => {
       const form = new FormData();
       form.append('tarball', file);

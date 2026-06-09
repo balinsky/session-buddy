@@ -505,6 +505,61 @@ router.post('/import-images', uploadTarball.single('tarball'), async (req, res) 
   }
 });
 
+const TS_TYPE_MAP = {
+  'reel': 'Reel', 'jig': 'Jig', 'slip jig': 'Slip Jig', 'hornpipe': 'Hornpipe',
+  'polka': 'Polka', 'slide': 'Slide', 'waltz': 'Waltz', 'mazurka': 'Mazurka',
+  'march': 'March', 'barndance': 'Barndance', 'strathspey': 'Strathspey',
+  'highland': 'Highland', 'fling': 'Fling', 'air': 'Air',
+  'three-two': '3/2 Tune', 'hop jig': 'Hop Jig', 'ronde': 'Rond',
+};
+
+function countNotes(bar) {
+  return (bar.match(/[A-Ga-g]/g) || []).length;
+}
+
+function extractIncipitsFromAbc(abc) {
+  if (!abc) return { incipit_a: null, incipit_b: null, incipit_c: null };
+  // Normalize: strip ! line-break markers, collapse whitespace
+  const normalized = abc.replace(/!/g, ' ').replace(/\s+/g, ' ').trim();
+  // Split on :| to separate repeated sections (each section = one tune part)
+  const rawParts = normalized.split(/:\|/).filter(p => p.trim());
+  const incipits = [];
+  for (const raw of rawParts) {
+    const clean = raw.replace(/^[\s|:]+/, '').trim();
+    if (!clean) continue;
+    const bars = clean.split('|').map(b => b.trim()).filter(Boolean);
+    if (!bars.length) continue;
+    // If bar 1 has fewer than half the notes of bar 2, it's a pickup — take 3 bars
+    const hasPickup = bars.length >= 2 && countNotes(bars[0]) < countNotes(bars[1]) / 2;
+    incipits.push(bars.slice(0, hasPickup ? 3 : 2).join('|'));
+  }
+  return {
+    incipit_a: incipits[0] || null,
+    incipit_b: incipits[1] || null,
+    incipit_c: incipits[2] || null,
+  };
+}
+
+router.get('/thesession-fetch/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!/^\d+$/.test(id)) return res.status(400).json({ error: 'Invalid tune ID.' });
+  try {
+    const response = await fetch(`https://thesession.org/tunes/${id}?format=json`);
+    if (!response.ok) return res.status(404).json({ error: 'Tune not found on thesession.org.' });
+    const data = await response.json();
+    const type = TS_TYPE_MAP[data.type?.toLowerCase()] || data.type || null;
+    const settings = (data.settings || []).map(s => ({
+      id: s.id,
+      key: s.key,
+      abc: s.abc,
+      ...extractIncipitsFromAbc(s.abc),
+    }));
+    res.json({ name: data.name, type, settings });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const tune = await db.getTuneById(req.params.id, req.user.id);

@@ -90,6 +90,8 @@ const state = {
     dateTo: '',
   },
   duplicateGroups: [],
+  tsFetchResult: null,
+  tsSelectedSetting: null,
   // Filter modal scratch state — see renderFilterClassChips comment block.
   filterClasses: [],
   filterMusicians: [],
@@ -1253,6 +1255,12 @@ async function goToTuneForm(tune = null) {
 
   const form = document.getElementById('tune-form');
   form.reset();
+  document.getElementById('ts-fetch-panel').classList.add('hidden');
+  document.getElementById('ts-fetch-status').classList.add('hidden');
+  document.getElementById('ts-settings-list').innerHTML = '';
+  document.getElementById('btn-ts-apply').classList.add('hidden');
+  state.tsFetchResult = null;
+  state.tsSelectedSetting = null;
 
   if (tune) {
     form.elements['name'].value = tune.name || '';
@@ -1448,6 +1456,83 @@ async function onTuneFormWhoSuggestionPicked(item) {
   }
   hideTuneFormWhoSuggestions();
   renderTuneFormWhoField();
+}
+
+async function fetchThesessionData() {
+  const id = document.getElementById('f-thesession-id').value.trim();
+  if (!id) { showError('Enter a Thesession ID first.'); return; }
+  const statusEl = document.getElementById('ts-fetch-status');
+  const panel = document.getElementById('ts-fetch-panel');
+  const settingsList = document.getElementById('ts-settings-list');
+  const applyBtn = document.getElementById('btn-ts-apply');
+  panel.classList.remove('hidden');
+  statusEl.textContent = 'Fetching…';
+  statusEl.className = 'import-status';
+  statusEl.classList.remove('hidden');
+  settingsList.innerHTML = '';
+  applyBtn.classList.add('hidden');
+  state.tsFetchResult = null;
+  state.tsSelectedSetting = null;
+  try {
+    const result = await API.fetchFromThesession(id);
+    state.tsFetchResult = result;
+    const n = result.settings.length;
+    statusEl.textContent = `"${result.name}" · ${result.type || 'unknown type'} · ${n} setting${n !== 1 ? 's' : ''}`;
+    statusEl.classList.add('success');
+    renderThesessionSettings();
+  } catch (err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    statusEl.classList.add('error');
+  }
+}
+
+function renderThesessionSettings() {
+  const result = state.tsFetchResult;
+  if (!result) return;
+  const container = document.getElementById('ts-settings-list');
+  container.innerHTML = '';
+  result.settings.forEach(setting => {
+    const card = document.createElement('div');
+    card.className = 'ts-setting-card' + (state.tsSelectedSetting?.id === setting.id ? ' selected' : '');
+    const keyDiv = document.createElement('div');
+    keyDiv.className = 'ts-setting-key';
+    keyDiv.textContent = `Setting ${setting.id} — ${setting.key}`;
+    card.appendChild(keyDiv);
+    if (setting.incipit_a) {
+      const previewId = `ts-preview-${setting.id}`;
+      const preview = document.createElement('div');
+      preview.id = previewId;
+      card.appendChild(preview);
+      requestAnimationFrame(() => renderAbcInto(previewId, setting.incipit_a, result.type, setting.key));
+    }
+    card.addEventListener('click', () => {
+      state.tsSelectedSetting = setting;
+      renderThesessionSettings();
+      document.getElementById('btn-ts-apply').classList.remove('hidden');
+    });
+    container.appendChild(card);
+  });
+}
+
+function applyThesessionData() {
+  const result = state.tsFetchResult;
+  const setting = state.tsSelectedSetting;
+  if (!result || !setting) return;
+  const form = document.getElementById('tune-form');
+  form.elements['name'].value = result.name || form.elements['name'].value;
+  if (result.type) form.elements['type'].value = result.type;
+  form.elements['key'].value = setting.key || '';
+  form.elements['setting'].value = setting.id || '';
+  ['a', 'b', 'c'].forEach(part => {
+    const val = setting[`incipit_${part}`];
+    if (val) {
+      form.elements[`incipit_${part}`].value = val;
+      renderAbcInto(`preview-${part}`, val, result.type, setting.key);
+    }
+  });
+  document.getElementById('ts-fetch-panel').classList.add('hidden');
+  state.tsFetchResult = null;
+  state.tsSelectedSetting = null;
 }
 
 async function saveTuneForm(e) {
@@ -3833,6 +3918,10 @@ function init() {
   document.querySelectorAll('.abc-input').forEach(input => {
     input.addEventListener('input', handleIncipitInput);
   });
+
+  // Fetch incipits from thesession.org
+  document.getElementById('btn-ts-fetch').addEventListener('click', fetchThesessionData);
+  document.getElementById('btn-ts-apply').addEventListener('click', applyThesessionData);
 
   // Sets list
   document.getElementById('btn-set-import').addEventListener('click', goToSetImport);
