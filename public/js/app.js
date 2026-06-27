@@ -852,6 +852,18 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
     </div>
   </div>`;
 
+  // Sets this tune appears in
+  html += `<div class="detail-card"><div class="detail-card-title">Sets</div>`;
+  if (tuneSets.length > 0) {
+    tuneSets.forEach(set => {
+      const setLabel = set.tunes.map(t => esc(t.name)).join(' / ');
+      html += `<div class="detail-field"><span class="detail-field-value tune-in-set-link" data-set-id="${set.id}">${setLabel} &#8599;</span></div>`;
+    });
+  } else {
+    html += `<div class="detail-field"><span class="detail-field-value"><em>Not in any sets yet</em></span></div>`;
+  }
+  html += `</div>`;
+
   // Always-visible fields. Instrument list is shown by the per-instrument
   // status table above, so it's not duplicated here.
   const visibleFields = [];
@@ -931,23 +943,12 @@ function renderTuneDetail(tune, tuneSets = [], images = [], instrumentStatuses =
   if (tune.added_date) hiddenFields.push(['Date Added', esc(tune.added_date)]);
   if (tune.setting) hiddenFields.push(['Setting', esc(tune.setting)]);
 
-  // Always show Additional Info — it always has at least the "In sets" row
-  {
+  if (hiddenFields.length > 0) {
     html += `<button class="show-more-btn" id="btn-show-more">Show more &#8964;</button>`;
     html += `<div class="detail-card hidden" id="hidden-fields-card"><div class="detail-card-title">Additional Info</div>`;
     hiddenFields.forEach(([label, value]) => {
       html += `<div class="detail-field"><span class="detail-field-label">${label}</span><span class="detail-field-value">${value}</span></div>`;
     });
-    if (tuneSets.length > 0) {
-      html += `<div class="detail-field detail-field--sets"><span class="detail-field-label">In sets</span><span class="detail-field-value">`;
-      tuneSets.forEach(set => {
-        const setLabel = set.tunes.map(t => esc(t.name)).join(' / ');
-        html += `<span class="tune-in-set-link" data-set-id="${set.id}">${setLabel} &#8599;</span>`;
-      });
-      html += `</span></div>`;
-    } else {
-      html += `<div class="detail-field"><span class="detail-field-label">In sets</span><span class="detail-field-value"><em>Not in any sets yet</em></span></div>`;
-    }
     html += `</div>`;
   }
 
