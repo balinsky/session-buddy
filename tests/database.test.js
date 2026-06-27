@@ -157,7 +157,7 @@ describe('getTunesByUser', () => {
   // X, Y, Z" without an extra round-trip per tune.
   it('attaches class_ids to each tune', async () => {
     mockPool.query.mockImplementation((sql) => {
-      if (/^SELECT \* FROM tunes WHERE user_id/.test(sql)) {
+      if (/FROM tunes/.test(sql) && /WHERE t\.user_id/.test(sql)) {
         return Promise.resolve({ rows: [{ id: 1 }, { id: 2 }, { id: 3 }] });
       }
       if (/tune_instrument_status/.test(sql)) {
@@ -182,7 +182,7 @@ describe('getTunesByUser', () => {
 
   it('returns an empty array without querying class_tunes when the user has no tunes', async () => {
     mockPool.query.mockImplementation((sql) => {
-      if (/^SELECT \* FROM tunes WHERE user_id/.test(sql)) {
+      if (/FROM tunes/.test(sql) && /WHERE t\.user_id/.test(sql)) {
         return Promise.resolve({ rows: [] });
       }
       throw new Error(`Unexpected pool.query: ${sql}`);

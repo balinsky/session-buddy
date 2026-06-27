@@ -204,7 +204,10 @@ router.post('/import', upload.single('csv'), async (req, res) => {
       if (!existingByName.has(n)) existingByName.set(n, []);
       existingByName.get(n).push(t);
     }
-    if (s) existingBySid.set(s, t);
+    if (s) {
+      if (!existingBySid.has(s)) existingBySid.set(s, []);
+      existingBySid.get(s).push(t);
+    }
   }
 
   function nameLooksLikeDup(name, type, sid) {
@@ -218,11 +221,16 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     });
   }
 
-  // Returns the existing tune that matches by SID (preferred) or name.
-  function findExistingTune(name, sid, type) {
+  // Returns the existing tune that matches by SID+setting (preferred) or name.
+  function findExistingTune(name, sid, type, setting) {
     if (sid) {
-      const bySid = existingBySid.get(sid);
-      if (bySid) return bySid;
+      const candSetting = (setting || '').trim();
+      const sidCandidates = (existingBySid.get(sid) || []).filter(t => {
+        const existingSetting = (t.setting || '').trim();
+        if (existingSetting && candSetting && existingSetting !== candSetting) return false;
+        return true;
+      });
+      if (sidCandidates[0]) return sidCandidates[0];
     }
     const candidates = (existingByName.get(name) || []).filter(t => {
       const ct = (t.type || '').trim();
@@ -247,13 +255,21 @@ router.post('/import', upload.single('csv'), async (req, res) => {
     const reasons = [];
 
     if (name && nameLooksLikeDup(name, type, sid)) reasons.push(`name "${tune.name}" already exists`);
-    if (sid && existingBySid.has(sid)) reasons.push(`Thesession ID ${sid} already exists`);
+    if (sid) {
+      const candSetting = (tune.setting || '').trim();
+      const isSidDup = (existingBySid.get(sid) || []).some(t => {
+        const existingSetting = (t.setting || '').trim();
+        if (existingSetting && candSetting && existingSetting !== candSetting) return false;
+        return true;
+      });
+      if (isSidDup) reasons.push(`Thesession ID ${sid} already exists`);
+    }
 
     if (reasons.length > 0) {
       if (tune._className) {
         // Dup row with a class — attach the class to the existing tune instead
         // of skipping the row.
-        const existingTune = findExistingTune(name, sid, type);
+        const existingTune = findExistingTune(name, sid, type, tune.setting);
         classAttachPending.push({ tune, existingTuneId: existingTune ? existingTune.id : null });
       } else {
         errorRows.push({
@@ -271,7 +287,10 @@ router.post('/import', upload.single('csv'), async (req, res) => {
         if (!existingByName.has(name)) existingByName.set(name, []);
         existingByName.get(name).push(tune);
       }
-      if (sid) existingBySid.set(sid, tune);
+      if (sid) {
+        if (!existingBySid.has(sid)) existingBySid.set(sid, []);
+        existingBySid.get(sid).push(tune);
+      }
     }
   }
 
@@ -579,6 +598,7 @@ router.post('/', async (req, res) => {
       name: req.body.name,
       type: req.body.type,
       sid: req.body.thesession_id,
+      setting: req.body.setting,
     });
     if (dup) {
       return res.status(409).json({
@@ -609,6 +629,7 @@ router.put('/:id', async (req, res) => {
       name: req.body.name,
       type: req.body.type,
       sid: req.body.thesession_id,
+      setting: req.body.setting,
     }, parseInt(req.params.id));
     if (dup) {
       return res.status(409).json({

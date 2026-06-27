@@ -392,6 +392,22 @@ describe('POST /api/tunes/import', () => {
     expect(res.body.errorRows[0].Errors).toMatch(/Thesession ID 63/);
   });
 
+  it('does NOT flag same Thesession ID as duplicate when settings differ', async () => {
+    // SID 63 setting 1 (D major) already in library. Importing SID 63 setting 2
+    // (G major) — a distinct variant — should succeed.
+    db.getTunesByUser.mockResolvedValue([
+      { id: 100, name: 'The Morning Dew', type: 'Reel', thesession_id: '63', setting: '1' },
+    ]);
+    const csv = "Name,Type,Thesession ID,Setting\nThe Morning Dew (G),Reel,63,2";
+    db.insertManyTunes.mockResolvedValue([{ id: 200 }]);
+    const res = await request(app)
+      .post('/api/tunes/import')
+      .set('x-sync-code', SYNC)
+      .attach('csv', Buffer.from(csv), 'tunes.csv');
+    expect(res.body.imported).toBe(1);
+    expect(res.body.duplicates).toBe(0);
+  });
+
   it('returns 400 when every row has an empty Name', async () => {
     const csv = "Name,Type\n,Jig\n,Reel";
     const res = await request(app)
@@ -704,13 +720,14 @@ function buildTarball(files) {
 
 describe('POST /api/tunes/import-images', () => {
   const SYNC = 'test-code';
-  const TUNES_WITH_SIDS = [
-    { id: 11, thesession_id: '12345', user_id: 1, name: 'Tune A' },
-    { id: 22, thesession_id: '67890', user_id: 1, name: 'Tune B' },
+  const TUNES = [
+    { id: 11, thesession_id: '12345', user_id: 1, name: "Morrison's Jig" },
+    { id: 22, thesession_id: '67890', user_id: 1, name: 'The Morning Dew' },
   ];
 
   beforeEach(() => {
-    db.getTunesByUser.mockResolvedValue(TUNES_WITH_SIDS);
+    db.getTunesByUser.mockResolvedValue(TUNES);
+    db.getSetsByUser.mockResolvedValue([]);
     db.addTuneImage.mockResolvedValue({ id: 99 });
   });
 
@@ -722,10 +739,10 @@ describe('POST /api/tunes/import-images', () => {
     expect(res.body.error).toMatch(/tarball file required/i);
   });
 
-  it('matches files to tunes by digit-runs in the filename', async () => {
+  it('matches files to tunes by name', async () => {
     const buf = buildTarball([
-      { name: 'sheet-12345.png', content: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
-      { name: 'whistle-67890.jpg', content: Buffer.from([0xff, 0xd8, 0xff]) },
+      { name: "Morrison's Jig.png", content: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
+      { name: 'The Morning Dew.jpg', content: Buffer.from([0xff, 0xd8, 0xff]) },
     ]);
     const res = await request(app)
       .post('/api/tunes/import-images')
@@ -735,26 +752,26 @@ describe('POST /api/tunes/import-images', () => {
     expect(res.body.imported).toBe(2);
     expect(res.body.unmatched).toEqual([]);
     expect(db.addTuneImage).toHaveBeenCalledTimes(2);
-    expect(db.addTuneImage).toHaveBeenCalledWith(11, 1, 'sheet-12345.png', 'image/png', expect.any(Buffer));
-    expect(db.addTuneImage).toHaveBeenCalledWith(22, 1, 'whistle-67890.jpg', 'image/jpeg', expect.any(Buffer));
+    expect(db.addTuneImage).toHaveBeenCalledWith(11, 1, "Morrison's Jig.png", 'image/png', expect.any(Buffer), expect.any(String));
+    expect(db.addTuneImage).toHaveBeenCalledWith(22, 1, 'The Morning Dew.jpg', 'image/jpeg', expect.any(Buffer), expect.any(String));
   });
 
-  it('reports unmatched filenames whose digit-runs do not match any tune', async () => {
+  it('reports unmatched filenames that do not match any tune name', async () => {
     const buf = buildTarball([
-      { name: 'sheet-99999.png', content: Buffer.from([0x89]) },
+      { name: 'Unknown Tune.png', content: Buffer.from([0x89]) },
     ]);
     const res = await request(app)
       .post('/api/tunes/import-images')
       .set('x-sync-code', SYNC)
       .attach('tarball', buf, 'archive.tar');
     expect(res.body.imported).toBe(0);
-    expect(res.body.unmatched).toEqual(['sheet-99999.png']);
+    expect(res.body.unmatched.map(u => u.filename)).toEqual(['Unknown Tune.png']);
     expect(db.addTuneImage).not.toHaveBeenCalled();
   });
 
   it('silently skips entries whose extension is not jpg/png/pdf', async () => {
     const buf = buildTarball([
-      { name: 'note-12345.txt', content: Buffer.from('hi') },
+      { name: "Morrison's Jig.txt", content: Buffer.from('hi') },
     ]);
     const res = await request(app)
       .post('/api/tunes/import-images')
@@ -771,7 +788,7 @@ describe('POST /api/tunes/import-images', () => {
   it('detects gzipped tarballs via magic bytes and decompresses transparently', async () => {
     const zlib = require('zlib');
     const rawTar = buildTarball([
-      { name: 'sheet-12345.png', content: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
+      { name: "Morrison's Jig.png", content: Buffer.from([0x89, 0x50, 0x4e, 0x47]) },
     ]);
     const gzipped = zlib.gzipSync(rawTar);
     expect(gzipped[0]).toBe(0x1f);
@@ -781,19 +798,19 @@ describe('POST /api/tunes/import-images', () => {
       .set('x-sync-code', SYNC)
       .attach('tarball', gzipped, 'archive.tar.gz');
     expect(res.body.imported).toBe(1);
-    expect(db.addTuneImage).toHaveBeenCalledWith(11, 1, 'sheet-12345.png', 'image/png', expect.any(Buffer));
+    expect(db.addTuneImage).toHaveBeenCalledWith(11, 1, "Morrison's Jig.png", 'image/png', expect.any(Buffer), expect.any(String));
   });
 
   it('classifies pdf attachments correctly', async () => {
     const buf = buildTarball([
-      { name: 'score-12345.pdf', content: Buffer.from('%PDF-1.4\n') },
+      { name: "Morrison's Jig.pdf", content: Buffer.from('%PDF-1.4\n') },
     ]);
     const res = await request(app)
       .post('/api/tunes/import-images')
       .set('x-sync-code', SYNC)
       .attach('tarball', buf, 'archive.tar');
     expect(res.body.imported).toBe(1);
-    expect(db.addTuneImage).toHaveBeenCalledWith(11, 1, 'score-12345.pdf', 'application/pdf', expect.any(Buffer));
+    expect(db.addTuneImage).toHaveBeenCalledWith(11, 1, "Morrison's Jig.pdf", 'application/pdf', expect.any(Buffer), expect.any(String));
   });
 });
 
